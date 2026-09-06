@@ -3,6 +3,12 @@ defmodule HelloLiveView.WiFiTest do
 
   alias HelloLiveView.WiFi
 
+  # What vintage_net_wifi hands over is a struct, which the map access
+  # syntax refuses; a fake with the same fields keeps that honest here.
+  defmodule AccessPoint do
+    defstruct [:bssid, :frequency, :band, :channel, :signal_dbm, :signal_percent, :flags, :ssid]
+  end
+
   defp ap(ssid, signal, flags, extra \\ %{}) do
     Map.merge(
       %{
@@ -16,6 +22,22 @@ defmodule HelloLiveView.WiFiTest do
       },
       extra
     )
+  end
+
+  test "summarize/1 and describe/1 take the structs a scan produces" do
+    scanned = %AccessPoint{
+      bssid: "94:83:c4:76:cc:f0",
+      frequency: 2412,
+      band: :wifi_2_4_ghz,
+      channel: 1,
+      signal_dbm: -28,
+      signal_percent: 97,
+      flags: [:wpa2_psk_ccmp, :wpa2, :psk, :ccmp, :ess, :utf8],
+      ssid: "home"
+    }
+
+    assert [%{ssid: "home", signal: 97, dbm: -28, security: "WPA2", joinable?: true}] =
+             WiFi.summarize([scanned])
   end
 
   test "there is nothing to configure on the host" do

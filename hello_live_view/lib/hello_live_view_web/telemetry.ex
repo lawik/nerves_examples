@@ -9,10 +9,13 @@ defmodule HelloLiveViewWeb.Telemetry do
   @impl true
   def init(_arg) do
     children = [
-      # Telemetry poller will execute the given period measurements
-      # every 10_000ms. Learn more here: https://hexdocs.pm/telemetry_metrics
-      {:telemetry_poller, measurements: periodic_measurements(), period: 10_000}
-      # Add reporters as children of your supervision tree.
+      # Telemetry poller will execute the given period measurements every
+      # 5_000ms. The BEAM's own figures (vm.memory, vm.system_counts and so
+      # on) come from the poller :telemetry_poller starts by itself, on the
+      # same period. Learn more here: https://hexdocs.pm/telemetry_metrics
+      {:telemetry_poller, measurements: periodic_measurements(), period: 5_000}
+      # Add reporters as children of your supervision tree. Mobius is one,
+      # started from HelloLiveView.Application with HelloLiveView.Metrics.
       # {Telemetry.Metrics.ConsoleReporter, metrics: metrics()}
     ]
 
@@ -64,6 +67,10 @@ defmodule HelloLiveViewWeb.Telemetry do
       # A module, function and arguments to be invoked periodically.
       # This function must call :telemetry.execute/3 and a metric must be added above.
       # {HelloLiveViewWeb, :count_users, []}
+
+      # CPU, system memory, load, temperature and the data partition, as
+      # [:hello_live_view, :device, ...] events for Mobius to keep.
+      {HelloLiveView.Metrics, :measure_device, []}
     ]
   end
 end

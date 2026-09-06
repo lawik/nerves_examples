@@ -13,7 +13,8 @@ defmodule HelloLiveViewWeb.Home do
   Application windows are the exception: one opens per OTP application picked
   in the Applications navigator, under the id `app-<name>`. While such a
   window (or the navigator) is open its contents are polled; closing it ends
-  the polling and drops the data.
+  the polling and drops the data. The Mobius window is polled the same way,
+  re-reading `HelloLiveView.Metrics.history/1` for the range it is showing.
 
   Files opened from the Files window work much the same way: one editor
   window per file, under an id that encodes the path (`file_window_id/2`),
@@ -27,11 +28,15 @@ defmodule HelloLiveViewWeb.Home do
   use HelloLiveViewWeb, :live_view
   import HelloLiveViewWeb.Format
 
+  require Logger
+
   alias HelloLiveView.Applications
+  alias HelloLiveView.Camera
   alias HelloLiveView.DeviceInfo
   alias HelloLiveView.Files
   alias HelloLiveView.GPIO
   alias HelloLiveView.I2C
+  alias HelloLiveView.Metrics
   alias HelloLiveView.Power
   alias HelloLiveView.Processes
   alias HelloLiveView.Shell
@@ -111,6 +116,20 @@ defmodule HelloLiveViewWeb.Home do
       label: "WiFi",
       icon: "preferences-system-network",
       width: 520
+    },
+    %{
+      id: "mobius",
+      title: "Mobius",
+      label: "Mobius",
+      icon: "office-chart-line",
+      width: 600
+    },
+    %{
+      id: "camera",
+      title: "Security Camera",
+      label: "Camera",
+      icon: "camera-video",
+      width: 640
     }
   ]
 
@@ -173,6 +192,12 @@ defmodule HelloLiveViewWeb.Home do
       |> assign(:i2c, nil)
       |> assign(:i2c_scanned_at, nil)
       |> assign(:wifi, nil)
+      |> assign(:camera, nil)
+      |> assign(:camera_notice, nil)
+      |> assign(:mobius, nil)
+      |> assign(:mobius_range, Metrics.default_range())
+      |> assign(:mobius_notice, nil)
+      |> assign(:mobius_dir, Metrics.persistence_dir())
       |> assign(:files, nil)
       |> assign(:files_new, nil)
       |> assign(:files_notice, nil)
@@ -192,7 +217,7 @@ defmodule HelloLiveViewWeb.Home do
       |> assign_windows(Windows.all())
 
     # Windows left open last time pick up where they were.
-    socket = Enum.reduce(socket.assigns.open, socket, &track(&2, &1))
+    socket = Enum.reduce(socket.assigns.open, socket, &restore(&2, &1))
     {:ok, refresh_cpu(socket)}
   end
 
@@ -244,6 +269,14 @@ defmodule HelloLiveViewWeb.Home do
   def handle_info({:DOWN, ref, :process, _shell, _reason}, %{assigns: %{shell_ref: ref}} = socket) do
     {:noreply, assign(socket, shell: nil, shell_ref: nil, prompt: nil)}
   end
+
+  # The camera reporting a new still, an error or a stop, while its window
+  # is open.
+  def handle_info({:camera, status}, %{assigns: %{camera: %{}}} = socket) do
+    {:noreply, assign(socket, :camera, status)}
+  end
+
+  def handle_info({:camera, _status}, socket), do: {:noreply, socket}
 
   # VintageNet reporting a change on the WiFi interface while its window is
   # open: a scan finished, or the association or an address changed.
@@ -336,6 +369,27 @@ defmodule HelloLiveViewWeb.Home do
 
   def handle_event("i2c_rescan", _params, socket), do: {:noreply, load(socket, "i2c")}
 
+  # ----------------------------------------------------------- Mobius window
+
+  # A range from the menu; the window re-reads at once rather than on the
+  # next poll, so the pick shows straight away.
+  def handle_event("mobius_range", %{"range" => range}, socket) do
+    case Metrics.fetch_range(range) do
+      {:ok, range} -> {:noreply, socket |> assign(:mobius_range, range) |> reload("mobius")}
+      :error -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("mobius_save", _params, socket) do
+    notice =
+      case Metrics.save() do
+        :ok -> %{ok?: true, text: "Saved" <> clock(socket)}
+        {:error, reason} -> %{ok?: false, text: "Could not save: #{inspect(reason)}"}
+      end
+
+    {:noreply, assign(socket, :mobius_notice, notice)}
+  end
+
   # Only one question at a time: picking the other replaces it.
   def handle_event("power", %{"id" => id}, socket) when is_map_key(@power_windows, id) do
     socket =
@@ -390,6 +444,26 @@ defmodule HelloLiveViewWeb.Home do
 
   def handle_event("iex_restart", _params, socket) do
     {:noreply, socket |> forget("iex") |> load("iex")}
+  end
+
+  # ----------------------------------------------------------- camera window
+
+  def handle_event("camera_start", params, socket) do
+    fields = for key <- ~w(host user password), do: params |> Map.get(key, "") |> String.trim()
+
+    case fields do
+      [host, user, password] when host != "" and user != "" and password != "" ->
+        :ok = Camera.watch(host, user, password)
+        {:noreply, assign(socket, camera: Camera.status(), camera_notice: nil)}
+
+      _blank ->
+        {:noreply, assign(socket, :camera_notice, "Address, user and password are all needed.")}
+    end
+  end
+
+  def handle_event("camera_stop", _params, socket) do
+    :ok = Camera.stop()
+    {:noreply, assign(socket, camera: Camera.status(), camera_notice: nil)}
   end
 
   # ------------------------------------------------------------- WiFi window
@@ -588,11 +662,27 @@ defmodule HelloLiveViewWeb.Home do
 
   defp polled?("applications"), do: true
   defp polled?("gpio"), do: true
+  defp polled?("mobius"), do: true
   defp polled?("app-" <> _name), do: true
   defp polled?(_id), do: false
 
   # Load a window's contents now and, if it is a polled one, keep them fresh
   # once connected until it closes. A window with nothing to load is left be.
+  # Open state is persisted, so a window whose contents cannot be read would
+  # otherwise crash every mount from then on, and on a kiosk that is the
+  # whole screen. It is closed instead, and the reason logged.
+  defp restore(socket, id) do
+    track(socket, id)
+  rescue
+    error ->
+      Logger.error(
+        "closing the #{id} window, it could not be restored: " <>
+          Exception.format(:error, error, __STACKTRACE__)
+      )
+
+      socket |> assign_windows(Windows.close(id)) |> release(id)
+  end
+
   defp track(socket, id) do
     cond do
       id not in socket.assigns.open -> socket
@@ -667,10 +757,21 @@ defmodule HelloLiveViewWeb.Home do
     end
   end
 
+  # Every poll re-reads the range on show; the notice about the last Save
+  # Now stays until the window closes.
+  defp load(socket, "mobius"),
+    do: assign(socket, :mobius, Metrics.history(socket.assigns.mobius_range))
+
   # Read when the window opens and on Rescan, never on a timer: a scan
   # touches every address on the bus.
   defp load(socket, "i2c"),
     do: assign(socket, i2c: I2C.scan(), i2c_scanned_at: socket.assigns.now)
+
+  # The camera process reports every change; the window only has to listen.
+  defp load(socket, "camera") do
+    if connected?(socket), do: Camera.subscribe()
+    assign(socket, camera: Camera.status(), camera_notice: nil)
+  end
 
   # Read once when the window opens; from then on VintageNet says when
   # something changes. The subscription only makes sense on the live socket.
@@ -736,10 +837,19 @@ defmodule HelloLiveViewWeb.Home do
     end
   end
 
+  # The camera keeps going for the other viewers; this window just stops listening.
+  defp forget(socket, "camera") do
+    Camera.unsubscribe()
+    assign(socket, camera: nil, camera_notice: nil)
+  end
+
   defp forget(socket, "wifi") do
     if match?(%{available?: true}, socket.assigns.wifi), do: WiFi.unsubscribe()
     assign(socket, :wifi, nil)
   end
+
+  # The range is kept, so reopening shows the same span as before.
+  defp forget(socket, "mobius"), do: assign(socket, mobius: nil, mobius_notice: nil)
 
   # Closing the window ends the session, and the scrollback with it.
   defp forget(socket, "iex") do
@@ -1350,6 +1460,21 @@ defmodule HelloLiveViewWeb.Home do
       </.window>
 
       <.window
+        :if={"camera" in @open}
+        id="camera"
+        title="Security Camera"
+        icon="camera-video"
+        width={640}
+        active={@focused == "camera"}
+        window={placement(@windows, "camera")}
+      >
+        <:menu>
+          <.menu_item phx-click="camera_stop">Stop</.menu_item>
+        </:menu>
+        <.camera_panel camera={@camera} notice={@camera_notice} />
+      </.window>
+
+      <.window
         :if={"wifi" in @open}
         id="wifi"
         title="WiFi"
@@ -1365,6 +1490,29 @@ defmodule HelloLiveViewWeb.Home do
           </.menu_item>
         </:menu>
         <.wifi_panel wifi={@wifi} />
+      </.window>
+
+      <.window
+        :if={"mobius" in @open}
+        id="mobius"
+        title="Mobius"
+        icon="office-chart-line"
+        width={600}
+        active={@focused == "mobius"}
+        window={placement(@windows, "mobius")}
+      >
+        <:menu>
+          <.menu_item
+            :for={{range, label} <- Metrics.ranges()}
+            phx-click="mobius_range"
+            phx-value-range={range}
+            aria-pressed={to_string(range == @mobius_range)}
+          >
+            {label}
+          </.menu_item>
+          <.menu_item phx-click="mobius_save">Save Now</.menu_item>
+        </:menu>
+        <.mobius_panel history={@mobius} notice={@mobius_notice} dir={@mobius_dir} />
       </.window>
 
       <.window

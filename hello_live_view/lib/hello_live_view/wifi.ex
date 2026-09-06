@@ -146,17 +146,18 @@ defmodule HelloLiveView.WiFi do
   """
   @spec describe(map()) :: network()
   def describe(access_point) do
-    flags = Enum.map(access_point[:flags] || [], &Atom.to_string/1)
+    # An AccessPoint is a struct, so no `access_point[:flags]` here.
+    flags = access_point |> Map.get(:flags) |> List.wrap() |> Enum.map(&Atom.to_string/1)
     security = security(flags)
     passphrase? = flagged?(flags, "psk") or flagged?(flags, "sae")
 
     %{
       ssid: access_point.ssid,
-      bssid: access_point[:bssid],
-      signal: access_point[:signal_percent] || 0,
-      dbm: access_point[:signal_dbm],
-      band: access_point[:band],
-      channel: access_point[:channel],
+      bssid: Map.get(access_point, :bssid),
+      signal: Map.get(access_point, :signal_percent) || 0,
+      dbm: Map.get(access_point, :signal_dbm),
+      band: Map.get(access_point, :band),
+      channel: Map.get(access_point, :channel),
       security: security,
       passphrase?: passphrase?,
       joinable?: security == "open" or passphrase?

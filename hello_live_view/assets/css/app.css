@@ -220,14 +220,21 @@
     color: var(--be-ink);
   }
 
+  /* The tray does the pushing to the right edge while there is one; with
+     every window closed it is not rendered, and the clock pushes itself. */
   .be-deskbar__clock {
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: flex-end;
+    margin-left: auto;
     padding: 0 12px;
     font-variant-numeric: tabular-nums;
     line-height: 1.1;
+  }
+
+  .be-deskbar__tray + .be-deskbar__clock {
+    margin-left: 0;
   }
 
   .be-deskbar__clock strong {
@@ -250,14 +257,23 @@
     overflow: hidden;
   }
 
+  /* Icons run down the left edge and, when the screen is too short for all
+     of them, into a second column, the way Tracker arranges a desktop. The
+     rail is pinned top and bottom so its height is known, which is what
+     lets the grid work out how many fit in a column. Every tile is the
+     same height (see .be-icon-tile), so a row is simply that plus a gap. */
   .be-desktop__icons {
     position: absolute;
     top: 12px;
+    bottom: 12px;
     left: 8px;
     z-index: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(auto-fill, 80px);
+    grid-auto-columns: 84px;
+    column-gap: 4px;
+    align-content: start;
   }
 
   /* ---------------------------------------------------------------- window */
@@ -879,6 +895,12 @@
     align-items: center;
     gap: 5px;
     width: 84px;
+    /* Fixed, so the rail's rows can be too: 6 + 40 icon + 5 + 18 label + 6,
+       plus the border. A label that wraps would be clipped, so keep them
+       to one word. */
+    box-sizing: border-box;
+    height: 78px;
+    overflow: hidden;
     padding: 6px 2px;
     background: none;
     border: 1px dotted transparent;
@@ -1229,5 +1251,117 @@
     outline: none;
     border-color: var(--be-outline);
     box-shadow: inset 1px 1px 0 var(--be-shadow);
+  }
+
+  /* --------------------------------------------------------------- mobius */
+  /* A pressed menu entry, for a menu that is also a choice (the Mobius
+     window's ranges): sunk into the bar the way a pressed .be-btn is. */
+  .be-menu-item[aria-pressed="true"] {
+    background: var(--be-panel-lo);
+    border-color: var(--be-shadow);
+    box-shadow: inset 1px 1px 0 var(--be-shadow);
+  }
+
+  /* A group heading inside a window body */
+  .be-heading {
+    margin: 0 0 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--be-ink-soft);
+  }
+
+  /* Metric cards for the Mobius window: a sunken tile like .be-stat with a
+     chart drawn straight into it, two to a row. */
+  .be-charts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .be-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    padding: 6px 8px;
+    background: var(--be-document);
+    border: 1px solid var(--be-shadow-deep);
+    box-shadow:
+      inset 1px 1px 0 var(--be-shadow),
+      inset -1px -1px 0 var(--be-light);
+  }
+
+  .be-chart__head,
+  .be-chart__foot {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .be-chart__label {
+    font-size: 12px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .be-chart__value {
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .be-chart__foot {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    font-size: 10px;
+    color: var(--be-ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The SVG is stretched to the card; the strokes are not (vector-effect). */
+  .be-chart__plot {
+    display: block;
+    width: 100%;
+    height: 44px;
+    border-bottom: 1px solid var(--be-panel-lo);
+  }
+
+  .be-chart__plot polyline {
+    fill: none;
+    stroke: var(--be-desktop);
+    stroke-width: 1.5px;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .be-chart__plot rect {
+    fill: var(--be-desktop);
+  }
+}
+
+/* ------------------------------------------------------------------ camera */
+@layer components {
+  .be-camera {
+    min-height: 120px;
+    background: #101010;
+    border: 1px solid var(--be-shadow-deep);
+  }
+
+  .be-camera img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .be-camera__waiting {
+    padding: 48px 16px;
+    color: #9a9a9a;
+    text-align: center;
   }
 }

@@ -9,6 +9,9 @@ config :hello_live_view, data_dir: Path.join(System.tmp_dir!(), "hello_live_view
 config :circuits_gpio, default_backend: {Circuits.GPIO.CDev, test: true}
 config :circuits_i2c, default_backend: {Circuits.I2C.I2CDev, test: true}
 
+# No camera on the network either; the fixture in test/support answers.
+config :hello_live_view, camera_fetch: {HelloLiveView.CameraFixture, :snapshot}
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :hello_live_view, HelloLiveViewWeb.Endpoint,

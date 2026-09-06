@@ -51,7 +51,8 @@ defmodule HelloLiveView.MixProject do
   def application do
     [
       mod: {HelloLiveView.Application, []},
-      extra_applications: [:logger, :runtime_tools, :os_mon]
+      # :inets and :ssl are for HelloLiveView.Milesight's HTTP client.
+      extra_applications: [:logger, :runtime_tools, :os_mon, :inets, :ssl]
     ]
   end
 
@@ -87,6 +88,11 @@ defmodule HelloLiveView.MixProject do
        depth: 1},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
+      # Local metrics history for the Mobius window (HelloLiveView.Metrics):
+      # scrapes the telemetry metrics into ring buffers under /data, so a
+      # device carries its own recent history across reboots. Pinned to main
+      # for the DDSketch histograms, which are newer than the Hex release.
+      {:mobius, github: "mobius-home/mobius", ref: "fdf8667"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:plug_cowboy, "~> 2.5"},
@@ -119,20 +125,13 @@ defmodule HelloLiveView.MixProject do
       {:nerves_system_rpi3, "~> 2.0", runtime: false, targets: :rpi3},
       {:nerves_system_rpi3a, "~> 2.0", runtime: false, targets: :rpi3a},
       {:nerves_system_rpi4, "~> 2.0", runtime: false, targets: :rpi4},
-      {:nerves_system_rpi5, "~> 2.0", runtime: false, targets: :rpi5},
+      rpi5_system(Mix.target()),
       {:nerves_system_bbb, "~> 2.14", runtime: false, targets: :bbb},
       {:nerves_system_x86_64, "~> 1.19", runtime: false, targets: :x86_64},
       {:nerves_system_trellis, "~> 0.4", runtime: false, targets: :trellis},
       {:nerves_system_mangopi_mq_pro, "~> 0.4", runtime: false, targets: :mangopi_mq_pro},
       {:kiosk_system_rpi4, "~> 2.1", runtime: false, targets: :kiosk_rpi4},
       {:kiosk_system_rpi5, "~> 2.1", runtime: false, targets: :kiosk_rpi5},
-      # The ref pins the commit the prebuilt system on the fork's v2.1.2 release
-      # was built from, so everyone fetches the same artifact.
-      {:nerves_system_rpi5,
-       github: "lawik/nerves_system_rpi5",
-       ref: "41e95be",
-       runtime: false,
-       targets: :recomputer_r22},
       {:recomputer_r22, github: "lawik/recomputer_r22", targets: :recomputer_r22},
 
       # The kiosk's display stack. MuonTrap runs its OS processes; it is
@@ -143,6 +142,20 @@ defmodule HelloLiveView.MixProject do
       {:myelin, "~> 0.1.1", targets: @kiosk_targets}
     ]
   end
+
+  # nerves_system_rpi5 backs two targets: the Raspberry Pi 5 itself from Hex,
+  # and the reComputer R22xx from a fork carrying that board's device tree
+  # overlay and drivers. Mix allows one dependency per name, so the target
+  # decides which one is declared. Note that `mix deps.get` rewrites the
+  # nerves_system_rpi5 entry in mix.lock when switching between the two.
+  defp rpi5_system(:recomputer_r22) do
+    # The ref pins the commit the prebuilt system on the fork's v2.1.2 release
+    # was built from, so everyone fetches the same artifact.
+    {:nerves_system_rpi5,
+     github: "lawik/nerves_system_rpi5", ref: "41e95be", runtime: false, targets: :recomputer_r22}
+  end
+
+  defp rpi5_system(_target), do: {:nerves_system_rpi5, "~> 2.0", runtime: false, targets: :rpi5}
 
   # Aliases are shortcuts or tasks specific to the current project.
   # For example, to install project dependencies and perform other setup tasks, run:

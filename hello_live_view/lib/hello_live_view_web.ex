@@ -98,8 +98,10 @@ defmodule HelloLiveViewWeb do
         GPIO,
         Files,
         I2C,
+        Mobius,
         Terminal,
-        WiFi
+        WiFi,
+        Camera
       }
 
       # Routes generation with the ~p sigil

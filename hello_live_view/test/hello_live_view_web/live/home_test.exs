@@ -109,6 +109,42 @@ defmodule HelloLiveViewWeb.HomeTest do
     refute has_element?(view, "#i2c")
   end
 
+  test "the Mobius window charts the history and switches range from its menu", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    html = view |> element("button.be-icon-tile[phx-value-id=mobius]") |> render_click()
+    assert html =~ "metrics over the last 2 hours"
+    assert has_element?(view, "#mobius #metric-vm-memory-total .be-chart__label", "Memory")
+
+    assert has_element?(
+             view,
+             "#mobius #metric-phoenix-live_view-handle_event-stop-duration",
+             "LiveView events"
+           )
+
+    assert has_element?(view, "#mobius .be-window__menu button[aria-pressed=true]", "2 Hours")
+
+    html = view |> element("#mobius .be-window__menu button", "2 Minutes") |> render_click()
+    assert html =~ "metrics over the last 2 minutes"
+    assert has_element?(view, "#mobius .be-window__menu button[aria-pressed=true]", "2 Minutes")
+    assert assigns(view).mobius_range == :minutes
+
+    # A range that is not one of ours is ignored rather than made an atom.
+    render_click(view, "mobius_range", %{"range" => "eons"})
+    assert assigns(view).mobius_range == :minutes
+
+    html = view |> element("#mobius .be-window__menu button", "Save Now") |> render_click()
+    assert html =~ "Saved at"
+
+    # The window is polled while open, and its data dropped once it closes.
+    assert MapSet.member?(assigns(view).polling, "mobius")
+    render_click(view, "close", %{"id" => "mobius"})
+    send(view.pid, {:poll, "mobius"})
+    assert assigns(view).mobius == nil
+    assert assigns(view).mobius_notice == nil
+    refute has_element?(view, "#mobius")
+  end
+
   test "the title and the Deskbar carry the hostname", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
     hostname = HelloLiveView.DeviceInfo.hostname()
@@ -204,6 +240,31 @@ defmodule HelloLiveViewWeb.HomeTest do
 
     render_click(view, "close", %{"id" => "wifi"})
     assert assigns(view).wifi == nil
+  end
+
+  test "the Security Camera window watches a camera and shows its latest still", %{conn: conn} do
+    on_exit(fn -> HelloLiveView.Camera.stop() end)
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    html = view |> element("button.be-icon-tile[phx-value-id=camera]") |> render_click()
+    assert html =~ "Milesight camera"
+
+    html =
+      view
+      |> form("#camera form", host: " ", user: "admin", password: "secret")
+      |> render_submit()
+
+    assert html =~ "all needed"
+
+    view
+    |> form("#camera form", host: "camera.test", user: "admin", password: "secret")
+    |> render_submit()
+
+    assert eventually(fn -> render(view) =~ "/camera/snapshot?at=" end)
+    refute render(view) =~ "secret"
+
+    view |> element("#camera .be-btn", "Stop") |> render_click()
+    assert render(view) =~ "Milesight camera"
   end
 
   test "the Applications window lists loaded applications", %{conn: conn} do

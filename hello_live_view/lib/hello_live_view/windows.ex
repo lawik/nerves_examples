@@ -30,7 +30,8 @@ defmodule HelloLiveView.Windows do
 
   # Cascade offsets for a window that has never been placed, so two windows
   # opened in a row don't land exactly on top of each other.
-  # Clear of the desktop icon rail on the left (8px + 84px wide).
+  # Clear of the desktop icon rail on the left (8px + 84px wide). On a short
+  # screen the rail wraps into a second column, which a window may cover.
   @cascade_origin {116, 28}
   @cascade_step 28
   @cascade_positions 6
@@ -98,12 +99,7 @@ defmodule HelloLiveView.Windows do
 
   @doc "Where the table is stored — `/data` on a device, a temp dir on the host."
   @spec data_dir() :: String.t()
-  def data_dir do
-    Application.get_env(:hello_live_view, :data_dir) ||
-      if File.dir?("/data"),
-        do: "/data",
-        else: Path.join(System.tmp_dir!(), "hello_live_view")
-  end
+  defdelegate data_dir(), to: HelloLiveView
 
   # ------------------------------------------------------------------- server
 

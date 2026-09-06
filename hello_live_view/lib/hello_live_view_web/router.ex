@@ -18,6 +18,7 @@ defmodule HelloLiveViewWeb.Router do
     pipe_through :browser
 
     live "/", Home
+    get "/camera/snapshot", CameraController, :snapshot
   end
 
   # Other scopes may use custom stacks.

@@ -11,7 +11,9 @@ defmodule HelloLiveView.DeviceInfo do
 
   `read/0` takes a full snapshot, including a shell-out to `df`; call it every
   few seconds rather than every tick. `clock/0`, `uptime/0` and `cpu/0` are
-  cheap and meant for a once-a-second refresh.
+  cheap and meant for a once-a-second refresh. `memory/0`, `load/0`,
+  `temperature/0` and `storage/0` are the pieces of the snapshot the metrics
+  poller (`HelloLiveView.Metrics`) samples on its own schedule.
   """
 
   @app :hello_live_view
@@ -167,9 +169,13 @@ defmodule HelloLiveView.DeviceInfo do
 
   # ------------------------------------------------------------------- memory
 
-  # System memory comes from os_mon's memsup — /proc/meminfo on Linux, a port
-  # program on macOS. BEAM memory always works, so report both.
-  defp memory do
+  @doc """
+  System memory as os_mon's memsup sees it (/proc/meminfo on Linux, a port
+  program on macOS), and what the BEAM holds. BEAM memory always works, so
+  both are reported; `:system` is `:error` without memsup.
+  """
+  @spec memory() :: %{system: {:ok, map()} | :error, beam_bytes: non_neg_integer()}
+  def memory do
     %{system: system_memory(), beam_bytes: :erlang.memory(:total)}
   end
 
@@ -218,10 +224,14 @@ defmodule HelloLiveView.DeviceInfo do
 
   # ------------------------------------------------------------------ storage
 
-  # On a target this is the application data partition; on the host, whatever
-  # filesystem the project is sitting on. Either way we report the path we
-  # measured so the number isn't ambiguous.
-  defp storage do
+  @doc """
+  Use of the application data partition on a target, or of whatever
+  filesystem the project is sitting on on the host. Either way the path
+  measured is reported, so the number is never ambiguous. Nil if `df` has no
+  answer.
+  """
+  @spec storage() :: map() | nil
+  def storage do
     path =
       case kv("nerves_fw_application_part0_devpath") do
         devpath when is_binary(devpath) and devpath != "" -> devpath
@@ -250,18 +260,39 @@ defmodule HelloLiveView.DeviceInfo do
 
   # ------------------------------------------------------- load & temperature
 
-  # cpu_sup hands load averages back scaled by 256, the way the kernel does.
-  defp load_average do
+  @doc """
+  Load averages over the last 1, 5 and 15 minutes, or nil without cpu_sup.
+  """
+  @spec load() :: %{avg1: float(), avg5: float(), avg15: float()} | nil
+  def load do
+    # cpu_sup hands load averages back scaled by 256, the way the kernel does.
     with one when is_integer(one) <- maybe_call(:cpu_sup, :avg1, []),
          five when is_integer(five) <- maybe_call(:cpu_sup, :avg5, []),
          fifteen when is_integer(fifteen) <- maybe_call(:cpu_sup, :avg15, []) do
-      Enum.map([one, five, fifteen], &:erlang.float_to_binary(&1 / 256, decimals: 2))
+      %{avg1: one / 256, avg5: five / 256, avg15: fifteen / 256}
     else
       _ -> nil
     end
   end
 
-  defp temperature do
+  # The three figures the way `uptime` prints them.
+  defp load_average do
+    case load() do
+      nil ->
+        nil
+
+      load ->
+        Enum.map([load.avg1, load.avg5, load.avg15], &:erlang.float_to_binary(&1, decimals: 2))
+    end
+  end
+
+  @doc """
+  The SoC temperature in °C from the first thermal zone, which is where
+  Linux puts it on a Raspberry Pi. Nil where there is no such zone, the host
+  included.
+  """
+  @spec temperature() :: float() | nil
+  def temperature do
     with {:ok, contents} <- File.read("/sys/class/thermal/thermal_zone0/temp"),
          {millidegrees_c, _rest} <- Integer.parse(String.trim(contents)) do
       Float.round(millidegrees_c / 1000, 1)

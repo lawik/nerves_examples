@@ -11,6 +11,14 @@ defmodule HelloLiveView.Application do
       [
         # Persistent windowing state (:dets under /data on a device)
         HelloLiveView.Windows,
+        # Fetches that must not block whoever asked for them
+        {Task.Supervisor, name: HelloLiveView.TaskSupervisor},
+        # The security camera's latest still, once one is watched
+        HelloLiveView.Camera,
+        # Mobius, keeping a history of the metrics for its window under
+        # /data. Before Telemetry, so its handlers are attached by the time
+        # the poller's first measurements go out.
+        HelloLiveView.Metrics,
         # Start the Telemetry supervisor
         HelloLiveViewWeb.Telemetry,
         # Start the PubSub system

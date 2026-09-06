@@ -35,17 +35,37 @@ config :nerves,
 # * See https://hexdocs.pm/nerves_ssh/readme.html for general SSH configuration
 # * See https://hexdocs.pm/ssh_subsystem_fwup/readme.html for firmware updates
 
+# The workshop devices are reached with ~/.ssh/workshop-fun, so it comes
+# first. The builder's own keys follow, so whoever builds an image can still
+# get into it. A key's .pub is used when there is one; otherwise the public
+# half is derived from the private key (`ssh-keygen -y`), which works for a
+# key without a passphrase.
+ssh_dir = Path.join(System.user_home!(), ".ssh")
+
+public_key = fn name ->
+  private = Path.join(ssh_dir, name)
+  public = private <> ".pub"
+
+  cond do
+    File.exists?(public) ->
+      File.read!(public)
+
+    File.exists?(private) and System.find_executable("ssh-keygen") ->
+      case System.cmd("ssh-keygen", ["-y", "-P", "", "-f", private], stderr_to_stdout: true) do
+        {key, 0} -> key
+        {_output, _status} -> nil
+      end
+
+    true ->
+      nil
+  end
+end
+
 keys =
-  [
-    Path.join([System.user_home!(), ".ssh", "id_rsa.pub"]),
-    Path.join([System.user_home!(), ".ssh", "id_ecdsa.pub"]),
-    Path.join([System.user_home!(), ".ssh", "id_ed25519.pub"]),
-    # The workshop devices are reached with this key as well as the builder's
-    # own. Generate the .pub from the private key with
-    # `ssh-keygen -y -f ~/.ssh/sandvik-workshop > ~/.ssh/sandvik-workshop.pub`.
-    Path.join([System.user_home!(), ".ssh", "sandvik-workshop.pub"])
-  ]
-  |> Enum.filter(&File.exists?/1)
+  ["workshop-fun", "sandvik-workshop", "id_ed25519", "id_ecdsa", "id_rsa"]
+  |> Enum.map(public_key)
+  |> Enum.reject(&is_nil/1)
+  |> Enum.uniq()
 
 if keys == [],
   do:
@@ -55,8 +75,7 @@ if keys == [],
     See your project's config.exs for this error message.
     """)
 
-config :nerves_ssh,
-  authorized_keys: Enum.map(keys, &File.read!/1)
+config :nerves_ssh, authorized_keys: keys
 
 ssid = System.get_env("NERVES_SSID")
 psk = System.get_env("NERVES_PSK")
