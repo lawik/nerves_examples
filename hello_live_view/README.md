@@ -59,6 +59,34 @@ which either gives you a chance to stop the build and add the environment
 variables or a clue as to why you are no longer able to access the device over
 WiFi.
 
+## Running as a Kiosk
+
+The `kiosk_rpi4` and `kiosk_rpi5` targets build the same application on the
+[kiosk systems](https://github.com/nerves-web-kiosk), which add udev, the Weston
+compositor and the Cog browser to the regular Raspberry Pi systems. On boot
+`HelloLiveView.Kiosk` starts that stack and points Cog at the Phoenix endpoint
+over loopback, so an attached display shows the desktop. The endpoint still
+listens on every interface, so the device is reachable over the network exactly
+as on the other targets.
+
+```bash
+MIX_ENV=prod MIX_TARGET=host mix do deps.get, assets.deploy
+MIX_ENV=prod MIX_TARGET=kiosk_rpi4 mix do deps.get, firmware, burn
+```
+
+[Myelin](https://hex.pm/packages/myelin) scripts run inside the browser on every
+page it shows. The screensaver is enabled in `config/kiosk.exs`; the touch
+keyboard and the other bundled scripts are switched on the same way.
+
+To rotate the display or pick a mode, add a
+`rootfs_overlay/etc/xdg/weston/weston.ini`:
+
+```ini
+[output]
+name=HDMI-A-1
+transform=rotate-270
+```
+
 ## Making It Your Own
 
 To use this project as a start for your own Nerves/LiveView project, first

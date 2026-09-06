@@ -106,13 +106,14 @@ defmodule HelloLiveViewWeb.Components.Desktop do
         "be-window",
         @active && "be-window--active",
         @window.zoomed? && "be-window--zoomed",
+        @window.h && "be-window--sized",
         @class
       ]}
       style={window_style(@window, @width)}
       data-x={@window.x}
       data-y={@window.y}
       data-zoomed={to_string(@window.zoomed?)}
-      phx-hook="WindowDrag"
+      phx-hook="WindowFrame"
       phx-click="focus"
       phx-value-id={@id}
       aria-label={@title}
@@ -122,9 +123,10 @@ defmodule HelloLiveViewWeb.Components.Desktop do
         <div class="be-tab">
           <button
             type="button"
-            class="be-tab__button"
+            class="be-tab__button be-tab__button--close"
             phx-click="close"
             phx-value-id={@id}
+            title={"Close #{@title}"}
             aria-label={"Close #{@title}"}
           />
           <span class="be-tab__title">
@@ -149,7 +151,7 @@ defmodule HelloLiveViewWeb.Components.Desktop do
         <div class="be-window__body">
           {render_slot(@inner_block)}
         </div>
-        <div class="be-window__grip" aria-hidden="true"></div>
+        <div class="be-window__resize" data-resize-handle title="Resize"></div>
       </div>
     </section>
     """
@@ -157,20 +159,81 @@ defmodule HelloLiveViewWeb.Components.Desktop do
 
   # A zoomed window pins to the left edge and spans the desktop, keeping its y.
   defp window_style(%{zoomed?: true} = window, _width),
-    do: "transform: translate3d(0, #{window.y}px, 0); z-index: #{window.z};"
+    do:
+      "transform: translate3d(0, #{window.y}px, 0); z-index: #{window.z};#{size_style(window, nil)}"
 
   defp window_style(window, width),
     do:
-      "transform: translate3d(#{window.x}px, #{window.y}px, 0); z-index: #{window.z}; width: #{width}px;"
+      "transform: translate3d(#{window.x}px, #{window.y}px, 0); z-index: #{window.z};#{size_style(window, width)}"
+
+  # Width falls back to the per-window default until someone resizes it; height
+  # stays auto so a window fits its content until it is given a size.
+  defp size_style(window, default_width) do
+    width = if(w = window.w || default_width, do: " width: #{w}px;", else: "")
+    height = if window.h, do: " height: #{window.h}px;", else: ""
+    width <> height
+  end
 
   @doc """
-  A menu bar entry. Decorative — BeOS windows just look wrong without one.
+  A sortable column heading for a Tracker-style list.
+
+  `sort` is the window's current `{column, direction}`. Clicking re-sorts;
+  clicking the active column flips direction. `event` is the LiveView event to
+  push, so each window keeps its own sort state:
+
+      <.column_header sort={@process_sort} column={:memory} label="Memory"
+                      event="sort_processes" numeric />
+
+  `aria-sort` tells a screen reader what the arrow says.
   """
+  attr :sort, :any, required: true, doc: "{column, :asc | :desc}"
+  attr :column, :atom, required: true
+  attr :label, :string, required: true
+  attr :event, :string, required: true
+  attr :numeric, :boolean, default: false
+
+  def column_header(assigns) do
+    {active, direction} = assigns.sort
+    assigns = assign(assigns, active?: active == assigns.column, direction: direction)
+
+    ~H"""
+    <th
+      class={@numeric && "be-table__num"}
+      aria-sort={
+        cond do
+          not @active? -> "none"
+          @direction == :asc -> "ascending"
+          true -> "descending"
+        end
+      }
+    >
+      <button type="button" phx-click={@event} phx-value-by={@column}>
+        {@label}<span :if={@active?} aria-hidden="true">{if @direction == :asc, do: "▲", else: "▼"}</span>
+      </button>
+    </th>
+    """
+  end
+
+  @doc """
+  A menu bar entry.
+
+  Renders as a button so it can carry a `phx-click` and be reached from the
+  keyboard:
+
+      <.menu_item phx-click="rescan" phx-value-id="network">Rescan</.menu_item>
+
+  With no handler attached it is inert, and looks the part. As a submit
+  button it can drive a form elsewhere in the window through `form`:
+
+      <.menu_item type="submit" form="notes-form">Save</.menu_item>
+  """
+  attr :type, :string, default: "button", values: ~w(button submit)
+  attr :rest, :global, include: ~w(disabled form)
   slot :inner_block, required: true
 
   def menu_item(assigns) do
     ~H"""
-    <span class="be-menu-item">{render_slot(@inner_block)}</span>
+    <button type={@type} class="be-menu-item" {@rest}>{render_slot(@inner_block)}</button>
     """
   end
 
@@ -204,8 +267,8 @@ defmodule HelloLiveViewWeb.Components.Desktop do
   that ticks straight from the LiveView.
   """
   attr :now, :any, default: nil, doc: "a NaiveDateTime, or nil before the socket connects"
-  attr :apps, :list, default: []
-  attr :open, :any, default: [], doc: "ids of the currently open windows"
+  attr :apps, :list, default: [], doc: "one entry per running window"
+  attr :focused, :any, default: nil, doc: "id of the window on top, highlighted in the tray"
 
   def deskbar(assigns) do
     ~H"""
@@ -214,14 +277,14 @@ defmodule HelloLiveViewWeb.Components.Desktop do
         <.nerves_logo size={20} />
       </div>
 
-      <nav class="be-deskbar__tray" aria-label="Windows">
+      <nav :if={@apps != []} class="be-deskbar__tray" aria-label="Running windows">
         <button
           :for={app <- @apps}
           type="button"
           class="be-deskbar__app"
           phx-click="open"
           phx-value-id={app.id}
-          aria-pressed={to_string(app.id in @open)}
+          aria-pressed={to_string(app.id == @focused)}
         >
           <.haiku_icon name={app.icon} size={16} />
           <span class="hidden sm:inline">{app.title}</span>

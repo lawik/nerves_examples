@@ -193,16 +193,6 @@
     gap: 2px;
   }
 
-  .be-desktop__empty {
-    position: absolute;
-    top: 40%;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255, 255, 255, 0.85);
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    text-align: center;
-  }
-
   /* ---------------------------------------------------------------- window */
   .be-window {
     --be-tab-fill: linear-gradient(180deg, var(--be-tab-idle-hi) 0%, var(--be-tab-idle) 100%);
@@ -301,13 +291,35 @@
 
   /* Close box on the left, zoom box on the right — as on a real BeOS tab. */
   .be-tab__button {
+    position: relative;
     flex: none;
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     padding: 0;
     border: 1px solid var(--be-shadow-deep);
     background: linear-gradient(180deg, #f6f6f6, #cfcfcf);
     cursor: pointer;
+  }
+
+  /* BeOS drew a bare square here. The cross costs nothing and means nobody
+     has to guess which box closes the window. */
+  .be-tab__button--close::before,
+  .be-tab__button--close::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 2px;
+    right: 2px;
+    height: 1px;
+    background: var(--be-ink);
+  }
+
+  .be-tab__button--close::before {
+    transform: rotate(45deg);
+  }
+
+  .be-tab__button--close::after {
+    transform: rotate(-45deg);
   }
 
   .be-tab__button:hover {
@@ -318,18 +330,16 @@
     background: linear-gradient(180deg, #a8a8a8, #d4d4d4);
   }
 
-  .be-tab__button--zoom {
-    position: relative;
-  }
-
   .be-tab__button--zoom::after {
     content: "";
     position: absolute;
-    inset: 2px 4px 4px 2px;
+    inset: 3px 5px 5px 3px;
     border: 1px solid var(--be-shadow-deep);
   }
 
   .be-window__frame {
+    position: relative;
+    flex: 1;
     border: 1px solid var(--be-outline);
     background: var(--be-panel);
     box-shadow:
@@ -354,8 +364,10 @@
 
   .be-menu-item {
     padding: 1px 8px;
+    font: inherit;
     font-size: 12px;
     color: var(--be-ink);
+    background: none;
     border: 1px solid transparent;
     cursor: default;
   }
@@ -365,32 +377,56 @@
     border-color: var(--be-shadow);
   }
 
+  /* An entry that cannot apply right now (New File in a read-only folder) */
+  .be-menu-item:disabled,
+  .be-menu-item:disabled:hover {
+    color: var(--be-shadow);
+    background: none;
+    border-color: transparent;
+  }
+
   .be-window__body {
+    flex: 1;
     padding: 14px;
     min-height: 0;
+    /* Unsized windows fit their content, capped so a long list cannot run off
+       the screen. Once resized, the window's own height governs instead. */
     max-height: 72vh;
     overflow: auto;
   }
 
-  /* Resize grip in the bottom-right corner */
-  .be-window__grip {
-    height: 14px;
-    display: flex;
-    justify-content: flex-end;
-    align-items: flex-end;
-    padding: 0 3px 3px 0;
-    background: var(--be-panel);
+  .be-window--sized .be-window__body {
+    max-height: none;
   }
 
-  .be-window__grip::after {
-    content: "";
-    width: 11px;
-    height: 8px;
+  /* The resize grip: BeOS drew ridges in this corner, and here they work. */
+  .be-window__resize {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    touch-action: none;
     background-image:
       linear-gradient(var(--be-shadow-deep) 1px, transparent 1px),
       linear-gradient(90deg, var(--be-shadow-deep) 1px, transparent 1px);
     background-size: 4px 4px;
-    opacity: 0.85;
+    background-position: right 3px bottom 3px;
+    background-repeat: no-repeat;
+    background-origin: content-box;
+    padding: 0 3px 3px 0;
+    box-sizing: border-box;
+  }
+
+  /* A zoomed window's width belongs to the zoom, so there is nothing to grab. */
+  .be-window--zoomed .be-window__resize {
+    display: none;
+  }
+
+  .be-window--resizing {
+    transition: none;
+    user-select: none;
   }
 
   /* -------------------------------------------------------------- surfaces */
@@ -445,6 +481,13 @@
   .be-btn:active {
     background: linear-gradient(180deg, #bdbdbd 0%, #d6d6d6 100%);
     box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.22);
+  }
+
+  /* A choice that is the current setting stays pressed in, like a radio */
+  .be-btn[aria-pressed="true"] {
+    background: linear-gradient(180deg, #bdbdbd 0%, #d6d6d6 100%);
+    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.22);
+    font-weight: 600;
   }
 
   /* The "default" button wears BeOS's extra ring */
@@ -508,6 +551,108 @@
     transition: width 400ms ease-out;
   }
 
+  /* ----------------------------------------------------------- list view */
+  /* A Tracker column list: sticky bevelled headings, a tinted selection and
+     tabular figures so the numbers line up while they tick. */
+  .be-table-wrap {
+    flex: 1;
+    min-height: 120px;
+    max-height: 46vh;
+    overflow: auto;
+  }
+
+  .be-window--sized .be-table-wrap {
+    max-height: none;
+  }
+
+  .be-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12px;
+  }
+
+  .be-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 0;
+    text-align: left;
+    font-weight: 600;
+    background: linear-gradient(180deg, var(--be-panel-hi), var(--be-panel));
+    /* Drawn as insets rather than borders: with a sticky cell, borders scroll
+       away and leave the heading transparent over the white list beneath. */
+    box-shadow:
+      inset -1px 0 0 var(--be-shadow),
+      inset 0 -1px 0 var(--be-shadow-deep);
+  }
+
+  .be-table th:last-child {
+    box-shadow: inset 0 -1px 0 var(--be-shadow-deep);
+  }
+
+  .be-table th button {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 3px 8px;
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .be-table th button:hover {
+    background: linear-gradient(180deg, var(--be-yellow-hi), var(--be-yellow));
+  }
+
+  .be-table td {
+    padding: 2px 8px;
+    border-bottom: 1px solid #ededed;
+    white-space: nowrap;
+  }
+
+  .be-table__num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .be-table th.be-table__num button {
+    justify-content: flex-end;
+  }
+
+  .be-table__name {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+  }
+
+  .be-table tbody tr {
+    cursor: default;
+  }
+
+  .be-table tbody tr:hover {
+    background: #eef3fa;
+  }
+
+  .be-table tbody tr[aria-selected="true"] {
+    background: var(--be-selection);
+  }
+
+  .be-btn:disabled {
+    color: var(--be-shadow);
+    background: var(--be-panel);
+    box-shadow: inset 1px 1px 0 var(--be-light);
+    cursor: not-allowed;
+  }
+
+  .be-btn:disabled:hover {
+    filter: none;
+  }
+
   .be-tag {
     display: inline-flex;
     align-items: center;
@@ -560,6 +705,106 @@
     font-size: 12px;
   }
 
+  /* ---------------------------------------------------------- applications */
+  /* The navigator: a Tracker list of clickable rows */
+  .be-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 52vh;
+    overflow: auto;
+  }
+
+  .be-list li + li {
+    border-top: 1px solid #e4e4e4;
+  }
+
+  .be-list__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    padding: 6px 8px;
+    font: inherit;
+    text-align: left;
+    color: var(--be-ink);
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .be-list__row:hover {
+    background: #eef3fa;
+  }
+
+  .be-list__row[aria-pressed="true"] {
+    background: var(--be-selection);
+  }
+
+  /* A row that cannot be picked (a GPIO line in use) reads, but does not invite */
+  .be-list__row:disabled {
+    cursor: default;
+  }
+
+  .be-list__row:disabled:not([aria-pressed="true"]):hover {
+    background: none;
+  }
+
+  .be-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+    filter: none;
+  }
+
+  /* Sunken tiles for the per-application numbers */
+  .be-stat {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 8px;
+    background: var(--be-document);
+    border: 1px solid var(--be-shadow-deep);
+    box-shadow:
+      inset 1px 1px 0 var(--be-shadow),
+      inset -1px -1px 0 var(--be-light);
+  }
+
+  .be-stat__value {
+    font-size: 15px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .be-stat__label {
+    font-size: 11px;
+    color: var(--be-ink-soft);
+  }
+
+  /* ------------------------------------------------------------ cpu cores */
+  /* One thin meter per core, two to a row */
+  .be-cores {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 14px;
+  }
+
+  .be-core {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 36px;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+  }
+
+  .be-core .be-meter {
+    height: 8px;
+  }
+
+  .be-core__value {
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
   /* ------------------------------------------------------- desktop icons */
   .be-icon-tile {
     display: flex;
@@ -595,6 +840,165 @@
     background: var(--be-yellow);
     color: var(--be-ink);
     text-shadow: none;
+  }
+
+  /* ----------------------------------------------------------------- files */
+  /* The path bar: an Up button, then the path as clickable segments in a
+     sunken strip, then whether this is somewhere files can be made. */
+  .be-path {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .be-path__crumbs {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    height: 25px;
+    padding: 0 4px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .be-path__crumb {
+    padding: 1px 5px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--be-link);
+    background: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+
+  .be-path__crumb + .be-path__crumb::before {
+    content: "›";
+    margin-right: 7px;
+    color: var(--be-shadow);
+  }
+
+  .be-path__crumb:hover {
+    text-decoration: underline;
+  }
+
+  .be-path__crumb[aria-current="location"] {
+    color: var(--be-ink);
+    font-weight: 700;
+    text-decoration: none;
+    cursor: default;
+  }
+
+  .be-btn--icon {
+    padding: 0 5px;
+  }
+
+  /* A text field, sunken like a BTextControl */
+  .be-input {
+    height: 25px;
+    padding: 0 6px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--be-ink);
+    background: var(--be-document);
+    border: 1px solid var(--be-shadow-deep);
+    border-radius: 0;
+    box-shadow:
+      inset 1px 1px 0 var(--be-shadow),
+      inset -1px -1px 0 var(--be-light);
+  }
+
+  .be-input:focus {
+    outline: 2px solid var(--be-yellow);
+    outline-offset: 0;
+    box-shadow: inset 1px 1px 0 var(--be-shadow);
+  }
+
+  .be-newform {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .be-newform .be-input {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  /* Files are rows you click, not select. Anything that is neither a folder
+     nor a regular file is listed, greyed, and goes nowhere. */
+  .be-table th > span {
+    display: block;
+    padding: 3px 8px;
+  }
+
+  .be-table--browse tbody tr[phx-click] {
+    cursor: pointer;
+  }
+
+  .be-table--browse tbody tr[aria-disabled="true"] {
+    color: var(--be-ink-soft);
+  }
+
+  .be-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* The editor: a StyledEdit-shaped textarea filling its window. Unsized,
+     the window fits the textarea's minimum; resized, the textarea follows. */
+  .be-editor {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .be-editor__status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+
+  .be-editor__text {
+    flex: 1;
+    width: 100%;
+    min-height: 320px;
+    padding: 6px 8px;
+    font-family: "DejaVu Sans Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    tab-size: 4;
+    color: var(--be-ink);
+    background: var(--be-document);
+    border: 1px solid var(--be-shadow-deep);
+    border-radius: 0;
+    box-shadow:
+      inset 1px 1px 0 var(--be-shadow),
+      inset -1px -1px 0 var(--be-light);
+    resize: none;
+    white-space: pre;
+    overflow: auto;
+  }
+
+  .be-window--sized .be-editor__text {
+    min-height: 0;
+  }
+
+  .be-editor__text:focus {
+    outline: 2px solid var(--be-yellow);
+    outline-offset: 0;
+    box-shadow: inset 1px 1px 0 var(--be-shadow);
+  }
+
+  .be-editor__text[readonly] {
+    background: var(--be-panel-hi);
   }
 
   /* ----------------------------------------------------------- scrollbars */

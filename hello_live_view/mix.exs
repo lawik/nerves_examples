@@ -3,7 +3,8 @@ defmodule HelloLiveView.MixProject do
 
   @app :hello_live_view
   @version "0.1.0"
-  @all_targets [
+
+  @nerves_targets [
     :rpi,
     :rpi0,
     :rpi2,
@@ -16,6 +17,13 @@ defmodule HelloLiveView.MixProject do
     :trellis,
     :mangopi_mq_pro
   ]
+
+  # The kiosk systems are nerves_system_rpi4/rpi5 plus udev, the Weston
+  # compositor and the Cog browser, so the device can show this app on its own
+  # display. See config/kiosk.exs and HelloLiveView.Kiosk.
+  @kiosk_targets [:kiosk_rpi4, :kiosk_rpi5]
+
+  @all_targets @nerves_targets ++ @kiosk_targets
 
   def project do
     [
@@ -38,7 +46,7 @@ defmodule HelloLiveView.MixProject do
   def application do
     [
       mod: {HelloLiveView.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :os_mon]
     ]
   end
 
@@ -61,6 +69,7 @@ defmodule HelloLiveView.MixProject do
       {:phoenix_live_reload, "~> 1.6", only: :dev, targets: :host},
       {:phoenix_live_view, "~> 1.0"},
       {:floki, ">= 0.30.0", only: :test},
+      {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8"},
       {:esbuild, "~> 0.7", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.5.1", runtime: Mix.env() == :dev},
@@ -82,6 +91,13 @@ defmodule HelloLiveView.MixProject do
       {:shoehorn, "~> 0.9.1"},
       {:ring_logger, "~> 0.11.0"},
       {:toolshed, "~> 0.5"},
+      # GPIO lines for the desktop's GPIO window. On the host it runs a stub
+      # backend with 64 simulated lines wired in pairs, so the window works
+      # without hardware.
+      {:circuits_gpio, "~> 2.3"},
+      # I2C buses for the desktop's I2C window. On the host it builds a test
+      # backend with three fake buses, one device answering on each.
+      {:circuits_i2c, "~> 2.1"},
 
       # Dependencies for all targets except :host
       {:nerves_runtime, "~> 0.13.0", targets: @all_targets},
@@ -102,7 +118,16 @@ defmodule HelloLiveView.MixProject do
       {:nerves_system_bbb, "~> 2.14", runtime: false, targets: :bbb},
       {:nerves_system_x86_64, "~> 1.19", runtime: false, targets: :x86_64},
       {:nerves_system_trellis, "~> 0.4", runtime: false, targets: :trellis},
-      {:nerves_system_mangopi_mq_pro, "~> 0.4", runtime: false, targets: :mangopi_mq_pro}
+      {:nerves_system_mangopi_mq_pro, "~> 0.4", runtime: false, targets: :mangopi_mq_pro},
+      {:kiosk_system_rpi4, "~> 2.1", runtime: false, targets: :kiosk_rpi4},
+      {:kiosk_system_rpi5, "~> 2.1", runtime: false, targets: :kiosk_rpi5},
+
+      # The kiosk's display stack. MuonTrap runs its OS processes; it is
+      # already on every target through nerves_time, and is listed here for
+      # the :wait_for option (1.8). Myelin is the WPE WebKit extension Cog
+      # loads, and only cross-compiles against a kiosk system.
+      {:muontrap, "~> 1.8", targets: @all_targets},
+      {:myelin, "~> 0.1.1", targets: @kiosk_targets}
     ]
   end
 

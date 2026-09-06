@@ -40,7 +40,17 @@ defmodule HelloLiveView.Application do
     [
       # Validate new firmware once an interface reports internet
       HelloLiveView.FirmwareValidator
-    ]
+    ] ++ kiosk_children()
+  end
+
+  # A kiosk target (config/kiosk.exs) has its own screen. The compositor and
+  # browser come after the endpoint in the tree, so there is a page to show.
+  defp kiosk_children do
+    if Application.get_env(:hello_live_view, :kiosk, false) do
+      [HelloLiveView.Kiosk]
+    else
+      []
+    end
   end
 
   def target() do

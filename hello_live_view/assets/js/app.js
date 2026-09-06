@@ -23,92 +23,125 @@ import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 
 
-// Drag a window by its tab, the way you would on a real desktop.
+// Move and resize a window, entirely client-side while the pointer is down.
 //
-// The server renders the authoritative position as an inline transform, so the
-// first paint is already correct and this hook does nothing at rest. While a
-// drag is in flight it writes the transform directly for a smooth 60fps, then
-// hands the final coordinate back to the LiveView, which persists it. Should a
-// diff land mid-drag, `updated()` re-asserts the in-flight position so the
-// window cannot snap back under the pointer.
-const WindowDrag = {
+// The server renders the authoritative geometry as inline style, so the first
+// paint is already correct and this hook does nothing at rest. During a gesture
+// it writes style directly for a smooth 60fps, then hands the final numbers to
+// the LiveView, which persists them. If a diff lands mid-gesture, `updated()`
+// re-asserts what the pointer is doing so nothing snaps out from under it.
+const WindowFrame = {
   mounted() {
-    this.dragging = false
-    this.handle = this.el.querySelector("[data-drag-handle]")
-    if (!this.handle) return
+    this.gesture = null
+    this.dragHandle = this.el.querySelector("[data-drag-handle]")
+    this.resizeHandle = this.el.querySelector("[data-resize-handle]")
 
     this.onPointerDown = (event) => {
+      if (event.button !== 0) return
+      const resizing = this.resizeHandle && this.resizeHandle.contains(event.target)
       // Let the close and zoom boxes be clicked without starting a drag.
-      if (event.button !== 0 || event.target.closest(".be-tab__button")) return
+      if (!resizing && event.target.closest(".be-tab__button")) return
 
-      const style = window.getComputedStyle(this.el)
-      const matrix = new DOMMatrixReadOnly(style.transform)
-      this.startX = matrix.m41
-      this.startY = matrix.m42
-      this.pointerX = event.clientX
-      this.pointerY = event.clientY
-      this.dragging = true
-      this.moved = false
-      this.el.classList.add("be-window--dragging")
-      this.handle.setPointerCapture(event.pointerId)
+      const rect = this.el.getBoundingClientRect()
+      const matrix = new DOMMatrixReadOnly(window.getComputedStyle(this.el).transform)
+      this.gesture = {
+        type: resizing ? "resize" : "move",
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+        startX: matrix.m41,
+        startY: matrix.m42,
+        startW: rect.width,
+        startH: rect.height,
+        moved: false
+      }
+      this.currentX = matrix.m41
+      this.currentY = matrix.m42
+      this.currentW = Math.round(rect.width)
+      this.currentH = Math.round(rect.height)
+      this.el.classList.add(resizing ? "be-window--resizing" : "be-window--dragging")
+      event.currentTarget.setPointerCapture(event.pointerId)
       event.preventDefault()
     }
 
     this.onPointerMove = (event) => {
-      if (!this.dragging) return
-      const dx = event.clientX - this.pointerX
-      const dy = event.clientY - this.pointerY
-      if (!this.moved && Math.abs(dx) + Math.abs(dy) < 3) return
-      this.moved = true
-      this.applyPosition(this.startX + dx, this.startY + dy)
+      if (!this.gesture) return
+      const dx = event.clientX - this.gesture.pointerX
+      const dy = event.clientY - this.gesture.pointerY
+      if (!this.gesture.moved && Math.abs(dx) + Math.abs(dy) < 3) return
+      this.gesture.moved = true
+      this.apply(dx, dy)
     }
 
     this.onPointerUp = (event) => {
-      if (!this.dragging) return
-      this.dragging = false
-      this.el.classList.remove("be-window--dragging")
-      if (this.handle.hasPointerCapture(event.pointerId)) {
-        this.handle.releasePointerCapture(event.pointerId)
+      if (!this.gesture) return
+      const {type, moved} = this.gesture
+      this.gesture = null
+      this.el.classList.remove("be-window--dragging", "be-window--resizing")
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
       }
-      if (!this.moved) return
-      this.pushEvent("move", {id: this.el.id, x: this.currentX, y: this.currentY})
+      if (!moved) return
+      if (type === "resize") {
+        this.pushEvent("resize", {id: this.el.id, w: this.currentW, h: this.currentH})
+      } else {
+        this.pushEvent("move", {id: this.el.id, x: this.currentX, y: this.currentY})
+      }
     }
 
-    this.handle.addEventListener("pointerdown", this.onPointerDown)
-    this.handle.addEventListener("pointermove", this.onPointerMove)
-    this.handle.addEventListener("pointerup", this.onPointerUp)
-    this.handle.addEventListener("pointercancel", this.onPointerUp)
+    for (const handle of [this.dragHandle, this.resizeHandle]) {
+      if (!handle) continue
+      handle.addEventListener("pointerdown", this.onPointerDown)
+      handle.addEventListener("pointermove", this.onPointerMove)
+      handle.addEventListener("pointerup", this.onPointerUp)
+      handle.addEventListener("pointercancel", this.onPointerUp)
+    }
   },
 
   updated() {
-    // A diff arrived mid-drag; keep the window under the pointer.
-    if (this.dragging) this.applyPosition(this.currentX, this.currentY)
+    if (this.gesture) this.apply(0, 0, true)
   },
 
   destroyed() {
-    if (!this.handle) return
-    this.handle.removeEventListener("pointerdown", this.onPointerDown)
-    this.handle.removeEventListener("pointermove", this.onPointerMove)
-    this.handle.removeEventListener("pointerup", this.onPointerUp)
-    this.handle.removeEventListener("pointercancel", this.onPointerUp)
+    for (const handle of [this.dragHandle, this.resizeHandle]) {
+      if (!handle) continue
+      handle.removeEventListener("pointerdown", this.onPointerDown)
+      handle.removeEventListener("pointermove", this.onPointerMove)
+      handle.removeEventListener("pointerup", this.onPointerUp)
+      handle.removeEventListener("pointercancel", this.onPointerUp)
+    }
   },
 
-  // Keep the window inside the desktop so it can never be dragged out of reach.
-  applyPosition(x, y) {
+  // Everything stays inside the desktop, so a window can never be pushed or
+  // shrunk out of reach.
+  apply(dx, dy, reassert = false) {
     const desktop = this.el.offsetParent
-    const maxX = desktop ? desktop.clientWidth - this.el.offsetWidth : x
-    const maxY = desktop ? desktop.clientHeight - 34 : y
+    const maxW = desktop ? desktop.clientWidth : Infinity
+    const maxH = desktop ? desktop.clientHeight : Infinity
 
-    this.currentX = Math.round(Math.min(Math.max(x, 0), Math.max(maxX, 0)))
-    this.currentY = Math.round(Math.min(Math.max(y, 0), Math.max(maxY, 0)))
-    this.el.style.transform = `translate3d(${this.currentX}px, ${this.currentY}px, 0)`
+    if (this.gesture.type === "resize") {
+      if (!reassert) {
+        this.currentW = Math.round(clamp(this.gesture.startW + dx, 260, maxW - this.currentX))
+        this.currentH = Math.round(clamp(this.gesture.startH + dy, 140, maxH - this.currentY))
+      }
+      this.el.style.width = `${this.currentW}px`
+      this.el.style.height = `${this.currentH}px`
+      this.el.classList.add("be-window--sized")
+    } else {
+      if (!reassert) {
+        this.currentX = Math.round(clamp(this.gesture.startX + dx, 0, Math.max(maxW - this.el.offsetWidth, 0)))
+        this.currentY = Math.round(clamp(this.gesture.startY + dy, 0, Math.max(maxH - 34, 0)))
+      }
+      this.el.style.transform = `translate3d(${this.currentX}px, ${this.currentY}px, 0)`
+    }
   }
 }
+
+const clamp = (value, low, high) => Math.min(Math.max(value, low), Math.max(high, low))
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  hooks: {WindowDrag},
+  hooks: {WindowFrame},
   params: {_csrf_token: csrfToken}
 })
 

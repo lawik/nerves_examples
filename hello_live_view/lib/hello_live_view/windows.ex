@@ -42,8 +42,16 @@ defmodule HelloLiveView.Windows do
           zoomed?: boolean(),
           x: non_neg_integer(),
           y: non_neg_integer(),
-          z: pos_integer()
+          z: pos_integer(),
+          w: pos_integer() | nil,
+          h: pos_integer() | nil
         }
+
+  # A window sizes itself to its content until someone drags the resize grip;
+  # from then on it keeps the size it was given. `nil` means "not yet sized".
+  @unsized %{w: nil, h: nil}
+  @min_width 260
+  @min_height 140
 
   # ------------------------------------------------------------------- client
 
@@ -70,6 +78,15 @@ defmodule HelloLiveView.Windows do
   @doc "Move a window to a desktop coordinate. Also raises it."
   @spec move(id(), integer(), integer()) :: %{id() => window()}
   def move(id, x, y), do: GenServer.call(__MODULE__, {:move, id, x, y})
+
+  @doc """
+  Resize a window. Also raises it, since you were just holding onto it.
+
+  Sizes are clamped to a usable minimum so a window can never be shrunk to a
+  sliver you cannot grab again.
+  """
+  @spec resize(id(), integer(), integer()) :: %{id() => window()}
+  def resize(id, width, height), do: GenServer.call(__MODULE__, {:resize, id, width, height})
 
   @doc "Toggle a window between its placed size and full desktop width."
   @spec toggle_zoom(id()) :: %{id() => window()}
@@ -161,6 +178,19 @@ defmodule HelloLiveView.Windows do
     end
   end
 
+  def handle_call({:resize, id, width, height}, _from, state) do
+    windows = load(state.table)
+
+    case Map.fetch(windows, id) do
+      {:ok, window} ->
+        sized = %{window | w: max(width, @min_width), h: max(height, @min_height)}
+        {:reply, commit(state.table, put_and_raise(state.table, windows, sized)), state}
+
+      :error ->
+        {:reply, windows, state}
+    end
+  end
+
   def handle_call({:toggle_zoom, id}, _from, state) do
     windows = load(state.table)
 
@@ -193,7 +223,7 @@ defmodule HelloLiveView.Windows do
   defp load(table) do
     table
     |> :dets.match_object({:_, :_})
-    |> Map.new(fn {id, window} -> {id, window} end)
+    |> Map.new(fn {id, window} -> {id, Map.merge(@unsized, window)} end)
   end
 
   defp put(table, windows, window) do
@@ -226,13 +256,13 @@ defmodule HelloLiveView.Windows do
     {origin_x, origin_y} = @cascade_origin
     step = rem(map_size(windows), @cascade_positions) * @cascade_step
 
-    %{
+    Map.merge(@unsized, %{
       id: id,
       open?: false,
       zoomed?: false,
       x: origin_x + step,
       y: origin_y + step,
       z: 1
-    }
+    })
   end
 end

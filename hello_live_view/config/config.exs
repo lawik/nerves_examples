@@ -54,6 +54,11 @@ Application.start(:nerves_bootstrap)
 
 config :hello_live_view, target: Mix.target()
 
+# Flipped to true by config/kiosk.exs on the kiosk targets. It compiles in and
+# starts HelloLiveView.Kiosk, the display stack that shows this app on the
+# device's own screen. Everything else is the same on every target.
+config :hello_live_view, kiosk: false
+
 # Customize non-Elixir parts of the firmware. See
 # https://hexdocs.pm/nerves/advanced-configuration.html for details.
 
@@ -76,6 +81,12 @@ config :logger, :console,
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
+
+# os_mon feeds the Resources window: cpu_sup for per-core usage and load
+# averages, memsup for system memory. disksup stays off: it shells out to `df`
+# on a timer and raises an alarm for the read-only rootfs, which is always
+# 100% full on a device. Storage is measured on demand instead.
+config :os_mon, start_disksup: false
 
 if Mix.target() == :host do
   import_config "host.exs"

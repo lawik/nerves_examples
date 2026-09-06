@@ -6,11 +6,12 @@ defmodule HelloLiveView.DeviceInfo do
   Everything degrades gracefully. `Nerves.Runtime`, `NervesMOTD` and
   `NervesTime` only exist on a target, so on the host (`mix phx.server`) the
   Nerves-specific fields come back `nil` and the BEAM- and OS-level ones still
-  work. Nothing here raises.
+  work. System memory, CPU usage and load come from OTP's `os_mon`; should it
+  not be running they come back `nil` too. Nothing here raises.
 
-  `read/0` takes a full snapshot, including two shell-outs (`free` and `df`);
-  call it every few seconds rather than every tick. `clock/0` and `uptime/0`
-  are cheap and meant for a once-a-second refresh.
+  `read/0` takes a full snapshot, including a shell-out to `df`; call it every
+  few seconds rather than every tick. `clock/0`, `uptime/0` and `cpu/0` are
+  cheap and meant for a once-a-second refresh.
   """
 
   @app :hello_live_view
@@ -147,26 +148,53 @@ defmodule HelloLiveView.DeviceInfo do
 
   # ------------------------------------------------------------------- memory
 
-  # System memory needs `free`, which is a BusyBox applet on Nerves but is
-  # missing on macOS. BEAM memory always works, so report both.
+  # System memory comes from os_mon's memsup — /proc/meminfo on Linux, a port
+  # program on macOS. BEAM memory always works, so report both.
   defp memory do
     %{system: system_memory(), beam_bytes: :erlang.memory(:total)}
   end
 
   defp system_memory do
-    {output, 0} = System.cmd("free", [])
-    [_header, memory_row | _] = String.split(output, "\n")
-    [_label | columns] = String.split(memory_row)
-    [size_kb, used_kb | _] = Enum.map(columns, &String.to_integer/1)
+    case maybe_call(:memsup, :get_system_memory_data, []) do
+      data when is_list(data) -> memory_from_memsup(data)
+      _ -> :error
+    end
+  end
 
-    {:ok,
-     %{
-       size_mb: round(size_kb / 1000),
-       used_mb: round(used_kb / 1000),
-       used_percent: round(used_kb / size_kb * 100)
-     }}
-  rescue
-    _ -> :error
+  @mib 1024 * 1024
+
+  # "Used" the way `free` means it: what the kernel could not hand out right
+  # now. Linux reports that directly as available_memory; elsewhere it is
+  # free plus buffers plus cache.
+  @doc false
+  def memory_from_memsup(data) do
+    with total when is_integer(total) and total > 0 <-
+           data[:system_total_memory] || data[:total_memory],
+         available when is_integer(available) <- available_memory(data) do
+      used = max(total - available, 0)
+
+      {:ok,
+       %{
+         size_mb: round(total / @mib),
+         used_mb: round(used / @mib),
+         used_percent: round(used / total * 100)
+       }}
+    else
+      _ -> :error
+    end
+  end
+
+  defp available_memory(data) do
+    case {data[:available_memory], data[:free_memory]} do
+      {available, _free} when is_integer(available) ->
+        available
+
+      {_none, free} when is_integer(free) ->
+        free + (data[:buffered_memory] || 0) + (data[:cached_memory] || 0)
+
+      _ ->
+        nil
+    end
   end
 
   # ------------------------------------------------------------------ storage
@@ -203,32 +231,15 @@ defmodule HelloLiveView.DeviceInfo do
 
   # ------------------------------------------------------- load & temperature
 
+  # cpu_sup hands load averages back scaled by 256, the way the kernel does.
   defp load_average do
-    case proc_load_average() do
-      {:ok, values} -> values
-      :error -> sysctl_load_average()
-    end
-  end
-
-  defp proc_load_average do
-    with {:ok, contents} <- File.read("/proc/loadavg"),
-         [one, five, fifteen | _] <- String.split(contents) do
-      {:ok, [one, five, fifteen]}
+    with one when is_integer(one) <- maybe_call(:cpu_sup, :avg1, []),
+         five when is_integer(five) <- maybe_call(:cpu_sup, :avg5, []),
+         fifteen when is_integer(fifteen) <- maybe_call(:cpu_sup, :avg15, []) do
+      Enum.map([one, five, fifteen], &:erlang.float_to_binary(&1 / 256, decimals: 2))
     else
-      _ -> :error
-    end
-  end
-
-  # macOS prints "{ 2.31 2.45 2.50 }" — handy while developing on the host.
-  defp sysctl_load_average do
-    {output, 0} = System.cmd("sysctl", ["-n", "vm.loadavg"])
-
-    case output |> String.replace(["{", "}"], "") |> String.split() do
-      [one, five, fifteen | _] -> [one, five, fifteen]
       _ -> nil
     end
-  rescue
-    _ -> nil
   end
 
   defp temperature do
@@ -238,6 +249,47 @@ defmodule HelloLiveView.DeviceInfo do
     else
       _ -> nil
     end
+  end
+
+  # ---------------------------------------------------------------------- cpu
+
+  @doc "Whether cpu_sup is up, which is os_mon on a Unix it knows."
+  @spec cpu_supported?() :: boolean()
+  def cpu_supported?, do: is_pid(Process.whereis(:cpu_sup))
+
+  @doc """
+  CPU usage per core since the calling process last asked, in whole percents:
+
+      %{total: 37, cores: [%{name: "cpu0", percent: 41}, ...]}
+
+  This is `:cpu_sup.util/1`, so the measurement window belongs to the calling
+  process: the first call a process makes is meaningless and should be thrown
+  away, and two calls inside the same clock tick read 100%. Nil when os_mon is
+  not running or does not support this OS.
+  """
+  @spec cpu() :: %{total: 0..100, cores: [map()]} | nil
+  def cpu do
+    case maybe_call(:cpu_sup, :util, [[:per_cpu]]) do
+      cores when is_list(cores) -> cpu_from_util(cores)
+      _ -> nil
+    end
+  end
+
+  @doc false
+  def cpu_from_util([]), do: nil
+
+  def cpu_from_util(cores) do
+    cores = Enum.sort_by(cores, &elem(&1, 0))
+    busy = for {_index, busy, _non_busy, _misc} <- cores, do: busy
+
+    %{
+      total: round(Enum.sum(busy) / length(busy)),
+      cores:
+        for(
+          {index, busy, _non_busy, _misc} <- cores,
+          do: %{name: "cpu#{index}", percent: round(busy)}
+        )
+    }
   end
 
   # ------------------------------------------------------------------ runtime

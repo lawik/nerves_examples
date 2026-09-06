@@ -21,9 +21,13 @@ config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 # https://github.com/nerves-project/erlinit/ for more information on
 # configuring erlinit.
 
+# The IEx prompt goes to the UART pins, leaving an attached display (HDMI, or
+# a kiosk's panel) to the application. This used to be a whole erlinit.config
+# in rootfs_overlay; overriding one key keeps each system's own mounts.
 config :nerves,
   erlinit: [
-    hostname_pattern: "nerves-%-.4s"
+    hostname_pattern: "nerves-%-.4s",
+    ctty: "ttyS0"
   ]
 
 # Configure the device for SSH IEx prompt access and firmware updates
@@ -124,3 +128,6 @@ config :mdns_lite,
 # Uncomment to use target specific configurations
 
 # import_config "#{Mix.target()}.exs"
+
+# The kiosk targets add the display stack on top of everything above.
+if Mix.target() in [:kiosk_rpi4, :kiosk_rpi5], do: import_config("kiosk.exs")
