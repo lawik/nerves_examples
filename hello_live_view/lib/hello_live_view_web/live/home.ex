@@ -19,6 +19,10 @@ defmodule HelloLiveViewWeb.Home do
   window per file, under an id that encodes the path (`file_window_id/2`),
   and an alert window for a file that has no viewer. Those are read once
   when they open, never polled, and forgotten when they close.
+
+  Restart and Shut Down, from the Deskbar's leaf menu, ask first in a window
+  of their own (`power-restart`, `power-shut-down`). Like an alert, that
+  question is answered rather than restored.
   """
   use HelloLiveViewWeb, :live_view
   import HelloLiveViewWeb.Format
@@ -28,8 +32,12 @@ defmodule HelloLiveViewWeb.Home do
   alias HelloLiveView.Files
   alias HelloLiveView.GPIO
   alias HelloLiveView.I2C
+  alias HelloLiveView.Power
   alias HelloLiveView.Processes
+  alias HelloLiveView.Shell
+  alias HelloLiveView.WiFi
   alias HelloLiveView.Windows
+  alias HelloLiveViewWeb.ANSI
 
   # The window registry: presentation only. Anything persisted lives in
   # HelloLiveView.Windows, keyed by these ids.
@@ -89,6 +97,20 @@ defmodule HelloLiveViewWeb.Home do
       label: "I2C",
       icon: "plugins",
       width: 520
+    },
+    %{
+      id: "iex",
+      title: "IEx",
+      label: "IEx",
+      icon: "terminal",
+      width: 640
+    },
+    %{
+      id: "wifi",
+      title: "WiFi",
+      label: "WiFi",
+      icon: "preferences-system-network",
+      width: 520
     }
   ]
 
@@ -97,6 +119,13 @@ defmodule HelloLiveViewWeb.Home do
   # Likewise every editor window, and every "no viewer" alert.
   @editor_icon "accessories-text-editor"
   @alert_icon "dialog-warning"
+
+  # The leaf menu's two questions, one window each so the tray can name them.
+  @power_icon "application-exit"
+  @power_windows %{
+    "power-restart" => %{action: :restart, title: "Restart"},
+    "power-shut-down" => %{action: :shut_down, title: "Shut Down"}
+  }
 
   # The clock ticks every second; the full snapshot shells out to `free` and
   # `df`, so it refreshes more gently.
@@ -122,11 +151,12 @@ defmodule HelloLiveViewWeb.Home do
 
     socket =
       socket
-      |> assign(:page_title, device.hostname)
+      |> assign(:page_title, DeviceInfo.title(device))
       |> assign(:apps, @apps)
       |> assign(:app_icon, @app_icon)
       |> assign(:editor_icon, @editor_icon)
       |> assign(:alert_icon, @alert_icon)
+      |> assign(:power_icon, @power_icon)
       |> assign(:device, device)
       |> assign(:processes, [])
       |> assign(:process_sort, {:memory, :desc})
@@ -142,11 +172,19 @@ defmodule HelloLiveViewWeb.Home do
       |> assign(:gpio_notice, nil)
       |> assign(:i2c, nil)
       |> assign(:i2c_scanned_at, nil)
+      |> assign(:wifi, nil)
       |> assign(:files, nil)
       |> assign(:files_new, nil)
       |> assign(:files_notice, nil)
       |> assign(:editors, %{})
       |> assign(:alerts, %{})
+      |> assign(:power, nil)
+      |> assign(:shell, nil)
+      |> assign(:shell_ref, nil)
+      |> assign(:prompt, nil)
+      |> assign(:term_style, ANSI.initial())
+      |> assign(:term_seq, 0)
+      |> stream(:out, [])
       |> assign(:now, device.clock.time)
       |> assign(:cpu_supported?, DeviceInfo.cpu_supported?())
       |> assign(:cpu_read_at, nil)
@@ -189,6 +227,35 @@ defmodule HelloLiveViewWeb.Home do
   # line's id, so the notification says which one.
   def handle_info({:circuits_gpio, %{} = change}, socket) do
     {:noreply, update(socket, :gpio_open, &GPIO.on_change(&1, change))}
+  end
+
+  # The IEx window's session: what it printed, that it wants a line, that it
+  # ended. Anything from a session already replaced is dropped.
+  def handle_info({:shell, shell, message}, %{assigns: %{shell: shell}} = socket) do
+    case message do
+      {:output, text} -> {:noreply, term_write(socket, text)}
+      {:prompt, prompt} -> {:noreply, assign(socket, :prompt, prompt)}
+      :exit -> {:noreply, assign(socket, shell: nil, shell_ref: nil, prompt: nil)}
+    end
+  end
+
+  def handle_info({:shell, _old_shell, _message}, socket), do: {:noreply, socket}
+
+  def handle_info({:DOWN, ref, :process, _shell, _reason}, %{assigns: %{shell_ref: ref}} = socket) do
+    {:noreply, assign(socket, shell: nil, shell_ref: nil, prompt: nil)}
+  end
+
+  # VintageNet reporting a change on the WiFi interface while its window is
+  # open: a scan finished, or the association or an address changed.
+  def handle_info(
+        {VintageNet, ["interface", _ifname, "wifi", "access_points"], _old, aps, _meta},
+        socket
+      ) do
+    {:noreply, wifi_update(socket, &%{&1 | networks: WiFi.summarize(aps || []), scanned?: true})}
+  end
+
+  def handle_info({VintageNet, ["interface", _ifname | _rest], _old, _new, _meta}, socket) do
+    {:noreply, wifi_update(socket, &%{&1 | status: WiFi.status()})}
   end
 
   @impl true
@@ -268,6 +335,103 @@ defmodule HelloLiveViewWeb.Home do
   end
 
   def handle_event("i2c_rescan", _params, socket), do: {:noreply, load(socket, "i2c")}
+
+  # Only one question at a time: picking the other replaces it.
+  def handle_event("power", %{"id" => id}, socket) when is_map_key(@power_windows, id) do
+    socket =
+      case socket.assigns.power do
+        %{id: other} when other != id -> assign_windows(socket, Windows.close(other))
+        _ -> socket
+      end
+
+    dialog = @power_windows |> Map.fetch!(id) |> Map.merge(%{id: id, status: :asking})
+
+    {:noreply,
+     socket
+     |> assign(:power, dialog)
+     |> assign_windows(Windows.open(id))}
+  end
+
+  def handle_event("power", _params, socket), do: {:noreply, socket}
+
+  def handle_event("power_confirm", _params, %{assigns: %{power: %{status: :asking}}} = socket) do
+    dialog = socket.assigns.power
+
+    result =
+      case dialog.action do
+        :restart -> Power.restart()
+        :shut_down -> Power.shut_down()
+      end
+
+    status = if result == :ok, do: :pending, else: result
+    {:noreply, assign(socket, :power, %{dialog | status: status})}
+  end
+
+  def handle_event("power_confirm", _params, socket), do: {:noreply, socket}
+
+  # -------------------------------------------------------------- IEx window
+
+  def handle_event("iex_submit", %{"line" => line}, %{assigns: %{shell: shell}} = socket)
+      when is_pid(shell) do
+    Shell.input(shell, line)
+    # IEx does not echo what it reads; the terminal does.
+    {:noreply,
+     socket
+     |> term_write((socket.assigns.prompt || "") <> line <> "\n")
+     |> assign(:prompt, nil)}
+  end
+
+  def handle_event("iex_submit", _params, socket), do: {:noreply, socket}
+
+  def handle_event("iex_interrupt", _params, socket) do
+    if shell = socket.assigns.shell, do: Shell.interrupt(shell)
+    {:noreply, socket}
+  end
+
+  def handle_event("iex_restart", _params, socket) do
+    {:noreply, socket |> forget("iex") |> load("iex")}
+  end
+
+  # ------------------------------------------------------------- WiFi window
+
+  def handle_event("wifi_rescan", _params, socket) do
+    {:noreply, wifi_update(socket, &%{&1 | notice: wifi_notice(WiFi.scan(), "scan")})}
+  end
+
+  def handle_event("wifi_select", %{"ssid" => ssid}, socket) do
+    {:noreply,
+     wifi_update(socket, fn wifi ->
+       %{wifi | selected: Enum.find(wifi.networks, &(&1.ssid == ssid)), notice: nil}
+     end)}
+  end
+
+  def handle_event("wifi_cancel", _params, socket) do
+    {:noreply, wifi_update(socket, &%{&1 | selected: nil})}
+  end
+
+  def handle_event("wifi_join", %{"ssid" => ssid} = params, socket) do
+    {:noreply,
+     wifi_update(socket, fn wifi ->
+       case Enum.find(wifi.networks, &(&1.ssid == ssid)) do
+         %{joinable?: true} ->
+           notice =
+             case WiFi.join(ssid, params["psk"]) do
+               :ok -> "Joining #{ssid}. VintageNet reports here as it goes."
+               {:error, reason} -> "Could not configure #{ssid}: #{inspect(reason)}"
+             end
+
+           %{wifi | selected: nil, notice: notice}
+
+         _not_joinable ->
+           %{wifi | notice: "#{ssid} cannot be joined from here."}
+       end
+     end)}
+  end
+
+  def handle_event("wifi_forget", _params, socket) do
+    {:noreply,
+     wifi_update(socket, &%{&1 | selected: nil, notice: wifi_notice(WiFi.forget(), "forget")})}
+  end
 
   # ------------------------------------------------------------ GPIO window
 
@@ -403,6 +567,14 @@ defmodule HelloLiveViewWeb.Home do
   defp dynamic_window("app-" <> name = id), do: %{id: id, title: name, icon: @app_icon}
   defp dynamic_window("edit-" <> _ = id), do: file_window(id, @editor_icon)
   defp dynamic_window("alert-" <> _ = id), do: file_window(id, @alert_icon)
+
+  defp dynamic_window("power-" <> _ = id) do
+    case @power_windows do
+      %{^id => %{title: title}} -> %{id: id, title: title, icon: @power_icon}
+      _ -> nil
+    end
+  end
+
   defp dynamic_window(_id), do: nil
 
   defp file_window(id, icon) do
@@ -486,10 +658,50 @@ defmodule HelloLiveViewWeb.Home do
       else: assign_windows(socket, Windows.close(id))
   end
 
+  # So is Restart or Shut Down: after a reload, or the restart itself, the
+  # question is gone.
+  defp load(socket, "power-" <> _ = id) do
+    case socket.assigns.power do
+      %{id: ^id} -> socket
+      _ -> assign_windows(socket, Windows.close(id))
+    end
+  end
+
   # Read when the window opens and on Rescan, never on a timer: a scan
   # touches every address on the bus.
   defp load(socket, "i2c"),
     do: assign(socket, i2c: I2C.scan(), i2c_scanned_at: socket.assigns.now)
+
+  # Read once when the window opens; from then on VintageNet says when
+  # something changes. The subscription only makes sense on the live socket.
+  defp load(socket, "wifi") do
+    if WiFi.available?() do
+      if connected?(socket), do: WiFi.subscribe()
+
+      assign(socket, :wifi, %{
+        available?: true,
+        ifname: WiFi.ifname(),
+        status: WiFi.status(),
+        networks: WiFi.networks(),
+        selected: nil,
+        notice: wifi_notice(WiFi.scan(), "scan"),
+        scanned?: false
+      })
+    else
+      assign(socket, :wifi, %{available?: false, ifname: WiFi.ifname()})
+    end
+  end
+
+  # One IEx session per window, started once the socket is live; the dead
+  # render would only start one to throw it away.
+  defp load(socket, "iex") do
+    if connected?(socket) and is_nil(socket.assigns.shell) do
+      {:ok, shell} = Shell.start(self())
+      assign(socket, shell: shell, shell_ref: Process.monitor(shell), prompt: nil)
+    else
+      socket
+    end
+  end
 
   defp load(socket, _id), do: socket
 
@@ -516,6 +728,29 @@ defmodule HelloLiveViewWeb.Home do
   defp forget(socket, "files"), do: assign(socket, files: nil, files_new: nil, files_notice: nil)
   defp forget(socket, "edit-" <> _ = id), do: update(socket, :editors, &Map.delete(&1, id))
   defp forget(socket, "alert-" <> _ = id), do: update(socket, :alerts, &Map.delete(&1, id))
+
+  defp forget(socket, "power-" <> _ = id) do
+    case socket.assigns.power do
+      %{id: ^id} -> assign(socket, :power, nil)
+      _ -> socket
+    end
+  end
+
+  defp forget(socket, "wifi") do
+    if match?(%{available?: true}, socket.assigns.wifi), do: WiFi.unsubscribe()
+    assign(socket, :wifi, nil)
+  end
+
+  # Closing the window ends the session, and the scrollback with it.
+  defp forget(socket, "iex") do
+    if socket.assigns.shell_ref, do: Process.demonitor(socket.assigns.shell_ref, [:flush])
+    if socket.assigns.shell, do: Shell.stop(socket.assigns.shell)
+
+    socket
+    |> assign(shell: nil, shell_ref: nil, prompt: nil, term_style: ANSI.initial())
+    |> stream(:out, [], reset: true)
+  end
+
   defp forget(socket, _id), do: socket
 
   # Start or stop an application from its window and show the outcome at
@@ -660,6 +895,28 @@ defmodule HelloLiveViewWeb.Home do
   defp entry_kind("file"), do: {:ok, :file}
   defp entry_kind("directory"), do: {:ok, :directory}
   defp entry_kind(_other), do: :error
+
+  # Change the WiFi window's state, if it is open and there is WiFi to show.
+  defp wifi_update(%{assigns: %{wifi: %{available?: true} = wifi}} = socket, fun),
+    do: assign(socket, :wifi, fun.(wifi))
+
+  defp wifi_update(socket, _fun), do: socket
+
+  defp wifi_notice(:ok, _what), do: nil
+  defp wifi_notice({:error, reason}, what), do: "The #{what} failed: #{inspect(reason)}"
+
+  # Chunks the IEx window has printed are streamed, so the server keeps none of
+  # them; only the ANSI state at the end of the last chunk carries over.
+  @scrollback 400
+
+  defp term_write(socket, text) do
+    {html, style} = ANSI.to_html(text, socket.assigns.term_style)
+    seq = socket.assigns.term_seq + 1
+
+    socket
+    |> assign(term_style: style, term_seq: seq)
+    |> stream_insert(:out, %{id: seq, html: html}, limit: -@scrollback)
+  end
 
   # Listing a few hundred processes every second is wasted work while nobody is
   # looking at them, so this only runs when the window is open.
@@ -1066,6 +1323,18 @@ defmodule HelloLiveViewWeb.Home do
       </.window>
 
       <.window
+        :if={@power}
+        id={@power.id}
+        title={@power.title}
+        icon={@power_icon}
+        width={400}
+        active={@focused == @power.id}
+        window={placement(@windows, @power.id)}
+      >
+        <.power_dialog power={@power} />
+      </.window>
+
+      <.window
         :if={"i2c" in @open}
         id="i2c"
         title="I2C"
@@ -1078,6 +1347,40 @@ defmodule HelloLiveViewWeb.Home do
           <.menu_item phx-click="i2c_rescan">Rescan</.menu_item>
         </:menu>
         <.i2c_panel scan={@i2c} scanned_at={@i2c_scanned_at} />
+      </.window>
+
+      <.window
+        :if={"wifi" in @open}
+        id="wifi"
+        title="WiFi"
+        icon="preferences-system-network"
+        width={520}
+        active={@focused == "wifi"}
+        window={placement(@windows, "wifi")}
+      >
+        <:menu>
+          <.menu_item phx-click="wifi_rescan">Rescan</.menu_item>
+          <.menu_item phx-click="wifi_forget" data-confirm="Forget every saved network?">
+            Forget
+          </.menu_item>
+        </:menu>
+        <.wifi_panel wifi={@wifi} />
+      </.window>
+
+      <.window
+        :if={"iex" in @open}
+        id="iex"
+        title="IEx"
+        icon="terminal"
+        width={640}
+        active={@focused == "iex"}
+        window={placement(@windows, "iex")}
+      >
+        <:menu>
+          <.menu_item phx-click="iex_interrupt">Interrupt</.menu_item>
+          <.menu_item phx-click="iex_restart">Restart</.menu_item>
+        </:menu>
+        <.terminal out={@streams.out} prompt={@prompt} shell={@shell} />
       </.window>
 
       <.window
@@ -1168,6 +1471,66 @@ defmodule HelloLiveViewWeb.Home do
     </div>
     """
   end
+
+  # The Be alert for Restart and Shut Down: a question, then Cancel or go.
+  # Once answered, the buttons give way to what happened.
+  attr :power, :map, required: true
+
+  defp power_dialog(assigns) do
+    ~H"""
+    <div class="flex items-start gap-4">
+      <.haiku_icon name="dialog-warning" size={40} />
+      <div class="min-w-0 flex-1">
+        <p class="text-[13px] font-bold">{power_question(@power)}</p>
+        <p class="mt-1 text-be-ink-soft">{power_detail(@power)}</p>
+      </div>
+    </div>
+    <div class="mt-4 flex justify-end gap-2">
+      <%= if @power.status == :asking do %>
+        <button type="button" class="be-btn" phx-click="close" phx-value-id={@power.id}>
+          Cancel
+        </button>
+        <button type="button" class="be-btn be-btn--default" phx-click="power_confirm">
+          {@power.title}
+        </button>
+      <% else %>
+        <button
+          type="button"
+          class="be-btn be-btn--default"
+          phx-click="close"
+          phx-value-id={@power.id}
+          disabled={@power.status == :pending}
+        >
+          OK
+        </button>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp power_question(%{action: :restart}), do: "Do you really want to restart the system?"
+  defp power_question(%{action: :shut_down}), do: "Do you really want to shut down the system?"
+
+  defp power_detail(%{status: :asking, action: :restart}),
+    do: "Open windows are remembered and come back afterwards."
+
+  defp power_detail(%{status: :asking, action: :shut_down}),
+    do: "The device stays off until its power is cycled."
+
+  defp power_detail(%{status: :pending, action: :restart}),
+    do: "Restarting… the desktop returns once the device is back up."
+
+  defp power_detail(%{status: :pending, action: :shut_down}),
+    do: "Shutting down… the device is off once the screen goes dark."
+
+  defp power_detail(%{status: {:error, :host}, action: action}),
+    do: "There is no device to #{power_verb(action)}: this desktop is running on the host."
+
+  defp power_detail(%{status: {:error, reason}, action: action}),
+    do: "Could not #{power_verb(action)}: #{inspect(reason)}"
+
+  defp power_verb(:restart), do: "restart"
+  defp power_verb(:shut_down), do: "shut down"
 
   defp process_hint(nil, processes),
     do: "#{length(processes)} processes — select one to act on it"

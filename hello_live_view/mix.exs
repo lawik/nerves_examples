@@ -15,7 +15,12 @@ defmodule HelloLiveView.MixProject do
     :bbb,
     :x86_64,
     :trellis,
-    :mangopi_mq_pro
+    :mangopi_mq_pro,
+    # Seeed reComputer R22xx (CM5): a fork of nerves_system_rpi5 with the
+    # board's device tree overlay and drivers, plus the recomputer_r22 library
+    # for its buzzer, RGB LED and UPS. See ADDING_THE_TARGET.md in
+    # https://github.com/lawik/recomputer_r22.
+    :recomputer_r22
   ]
 
   # The kiosk systems are nerves_system_rpi4/rpi5 plus udev, the Weston
@@ -121,6 +126,14 @@ defmodule HelloLiveView.MixProject do
       {:nerves_system_mangopi_mq_pro, "~> 0.4", runtime: false, targets: :mangopi_mq_pro},
       {:kiosk_system_rpi4, "~> 2.1", runtime: false, targets: :kiosk_rpi4},
       {:kiosk_system_rpi5, "~> 2.1", runtime: false, targets: :kiosk_rpi5},
+      # The ref pins the commit the prebuilt system on the fork's v2.1.2 release
+      # was built from, so everyone fetches the same artifact.
+      {:nerves_system_rpi5,
+       github: "lawik/nerves_system_rpi5",
+       ref: "41e95be",
+       runtime: false,
+       targets: :recomputer_r22},
+      {:recomputer_r22, github: "lawik/recomputer_r22", targets: :recomputer_r22},
 
       # The kiosk's display stack. MuonTrap runs its OS processes; it is
       # already on every target through nerves_time, and is listed here for

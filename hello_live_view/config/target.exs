@@ -39,7 +39,11 @@ keys =
   [
     Path.join([System.user_home!(), ".ssh", "id_rsa.pub"]),
     Path.join([System.user_home!(), ".ssh", "id_ecdsa.pub"]),
-    Path.join([System.user_home!(), ".ssh", "id_ed25519.pub"])
+    Path.join([System.user_home!(), ".ssh", "id_ed25519.pub"]),
+    # The workshop devices are reached with this key as well as the builder's
+    # own. Generate the .pub from the private key with
+    # `ssh-keygen -y -f ~/.ssh/sandvik-workshop > ~/.ssh/sandvik-workshop.pub`.
+    Path.join([System.user_home!(), ".ssh", "sandvik-workshop.pub"])
   ]
   |> Enum.filter(&File.exists?/1)
 

@@ -52,6 +52,27 @@ defmodule HelloLiveView.DeviceInfoTest do
     end
   end
 
+  describe "nickname_from_id/1" do
+    test "keeps the nickname and drops the uuid" do
+      assert DeviceInfo.nickname_from_id("brave-otter (5d3a1c2e-0000-4000-8000-000000000000)") ==
+               "brave-otter"
+    end
+
+    test "is nil when there is no firmware to name" do
+      assert DeviceInfo.nickname_from_id(nil) == nil
+      assert DeviceInfo.nickname_from_id("unknown") == nil
+    end
+  end
+
+  describe "title/1" do
+    test "joins hostname and nickname, or is just the hostname" do
+      assert DeviceInfo.title(%{hostname: "pi", firmware: %{nickname: "brave-otter"}}) ==
+               "pi · brave-otter"
+
+      assert DeviceInfo.title(%{hostname: "pi", firmware: %{nickname: nil}}) == "pi"
+    end
+  end
+
   test "cpu, memory and load all come from os_mon on this host" do
     assert DeviceInfo.cpu_supported?()
     assert %{total: total, cores: [%{name: "cpu0"} | _]} = DeviceInfo.cpu()

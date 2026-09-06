@@ -1,6 +1,7 @@
 <div class="flex min-h-screen flex-col">
   <.deskbar
     now={assigns[:now]}
+    title={assigns[:page_title]}
     apps={assigns[:tray] || []}
     focused={assigns[:focused]}
   />

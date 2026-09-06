@@ -138,10 +138,67 @@ const WindowFrame = {
 
 const clamp = (value, low, high) => Math.min(Math.max(value, low), Math.max(high, low))
 
+// The IEx window. The server streams what IEx prints and asks for lines;
+// everything a terminal does on top of that lives here: keep the newest
+// output in view, put the caret on the input line, walk the history with
+// the arrow keys, and turn Ctrl+C into an interrupt.
+const Terminal = {
+  mounted() {
+    this.out = this.el.querySelector("[data-terminal-out]")
+    this.history = []
+    this.cursor = 0
+    this.draft = ""
+
+    this.observer = new MutationObserver(() => this.scrollToEnd())
+    this.observer.observe(this.out, {childList: true, subtree: true, characterData: true})
+
+    this.el.addEventListener("click", () => {
+      if (window.getSelection().isCollapsed) this.input()?.focus()
+    })
+    this.el.addEventListener("submit", () => {
+      const line = this.input().value
+      if (line.trim() !== "" && this.history[this.history.length - 1] !== line) this.history.push(line)
+      this.cursor = this.history.length
+      this.draft = ""
+      // After LiveView has read the form.
+      setTimeout(() => { this.input().value = ""; this.scrollToEnd() }, 0)
+    })
+    this.el.addEventListener("keydown", (event) => {
+      if (event.target !== this.input()) return
+      if (event.key === "ArrowUp") { event.preventDefault(); this.recall(-1) }
+      else if (event.key === "ArrowDown") { event.preventDefault(); this.recall(1) }
+      else if (event.key === "c" && event.ctrlKey) { event.preventDefault(); this.pushEvent("iex_interrupt", {}) }
+    })
+
+    this.input()?.focus()
+    this.scrollToEnd()
+  },
+
+  destroyed() {
+    this.observer.disconnect()
+  },
+
+  input() {
+    return this.el.querySelector("input")
+  },
+
+  recall(step) {
+    if (this.cursor === this.history.length) this.draft = this.input().value
+    this.cursor = Math.min(Math.max(this.cursor + step, 0), this.history.length)
+    const value = this.cursor === this.history.length ? this.draft : this.history[this.cursor]
+    this.input().value = value
+    this.input().setSelectionRange(value.length, value.length)
+  },
+
+  scrollToEnd() {
+    this.el.scrollTop = this.el.scrollHeight
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  hooks: {WindowFrame},
+  hooks: {WindowFrame, Terminal},
   params: {_csrf_token: csrfToken}
 })
 

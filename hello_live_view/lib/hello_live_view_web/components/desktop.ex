@@ -14,6 +14,8 @@ defmodule HelloLiveViewWeb.Components.Desktop do
   """
   use Phoenix.Component
 
+  alias Phoenix.LiveView.JS
+
   use Phoenix.VerifiedRoutes,
     endpoint: HelloLiveViewWeb.Endpoint,
     router: HelloLiveViewWeb.Router,
@@ -265,16 +267,59 @@ defmodule HelloLiveViewWeb.Components.Desktop do
   The Deskbar. Haiku keeps it in the top-right corner; here it spans the top
   edge, with the Nerves logo on the left, running apps in the tray and a clock
   that ticks straight from the LiveView.
+
+  The logo is the leaf: clicking it drops the Be menu, with About This System
+  and, as on the original, Restart and Shut Down. Opening and closing the menu
+  is done in the browser with `Phoenix.LiveView.JS`; only a pick reaches the
+  server, as `open` or `power`.
   """
   attr :now, :any, default: nil, doc: "a NaiveDateTime, or nil before the socket connects"
+  attr :title, :string, default: nil, doc: "hostname and firmware nickname, next to the logo"
   attr :apps, :list, default: [], doc: "one entry per running window"
   attr :focused, :any, default: nil, doc: "id of the window on top, highlighted in the tray"
 
   def deskbar(assigns) do
     ~H"""
     <header class="be-deskbar">
-      <div class="be-deskbar__leaf">
-        <.nerves_logo size={20} />
+      <div class="be-deskbar__leaf" phx-click-away={JS.hide(to: "#deskbar-menu")}>
+        <button
+          type="button"
+          class="be-deskbar__leaf-button"
+          phx-click={JS.toggle(to: "#deskbar-menu")}
+          aria-haspopup="menu"
+          aria-controls="deskbar-menu"
+        >
+          <.nerves_logo size={20} />
+          <span :if={@title} class="be-deskbar__title">{@title}</span>
+        </button>
+
+        <div id="deskbar-menu" class="be-dropdown hidden" role="menu" aria-label="Be menu">
+          <button
+            type="button"
+            role="menuitem"
+            class="be-dropdown__item"
+            phx-click={pick(JS.push("open", value: %{id: "system"}))}
+          >
+            About This System…
+          </button>
+          <hr class="be-dropdown__separator" />
+          <button
+            type="button"
+            role="menuitem"
+            class="be-dropdown__item"
+            phx-click={pick(JS.push("power", value: %{id: "power-restart"}))}
+          >
+            Restart…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="be-dropdown__item"
+            phx-click={pick(JS.push("power", value: %{id: "power-shut-down"}))}
+          >
+            Shut Down…
+          </button>
+        </div>
       </div>
 
       <nav :if={@apps != []} class="be-deskbar__tray" aria-label="Running windows">
@@ -298,4 +343,7 @@ defmodule HelloLiveViewWeb.Components.Desktop do
     </header>
     """
   end
+
+  # A menu pick closes the menu on its way to the server.
+  defp pick(js), do: JS.hide(js, to: "#deskbar-menu")
 end

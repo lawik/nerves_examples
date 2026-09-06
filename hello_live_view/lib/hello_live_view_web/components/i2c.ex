@@ -50,14 +50,10 @@ defmodule HelloLiveViewWeb.Components.I2C do
 
       <div :for={device <- bus.devices} class="be-row items-baseline">
         <span class="be-mono font-bold">{device.hex}</span>
-        <span class="min-w-0 flex-1">{guess_text(device.guesses)}</span>
       </div>
     </div>
     """
   end
-
-  defp guess_text([]), do: "no common part at this address"
-  defp guess_text(guesses), do: "may be a " <> Enum.join(guesses, ", or a ")
 
   defp count(1, noun), do: "1 #{noun}"
   defp count(n, "bus"), do: "#{n} buses"

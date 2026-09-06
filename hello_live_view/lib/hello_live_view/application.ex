@@ -36,12 +36,17 @@ defmodule HelloLiveView.Application do
     ]
   end
 
-  def children(_target) do
+  def children(target) do
     [
       # Validate new firmware once an interface reports internet
       HelloLiveView.FirmwareValidator
-    ] ++ kiosk_children()
+    ] ++ board_children(target) ++ kiosk_children()
   end
+
+  # Board-specific hardware. The recomputer_r22 library only ships on its own
+  # target (mix.exs); its supervisor runs the buzzer, RGB LED and UPS monitor.
+  defp board_children(:recomputer_r22), do: [{RecomputerR22.Supervisor, []}]
+  defp board_children(_target), do: []
 
   # A kiosk target (config/kiosk.exs) has its own screen. The compositor and
   # browser come after the endpoint in the tree, so there is a page to show.

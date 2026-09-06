@@ -111,12 +111,79 @@
   }
 
   .be-deskbar__leaf {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    border-right: 1px solid var(--be-shadow);
+    box-shadow: 1px 0 0 var(--be-light);
+  }
+
+  /* The leaf is the Be menu: logo and title press as one button. */
+  .be-deskbar__leaf-button {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 0 12px;
-    border-right: 1px solid var(--be-shadow);
-    box-shadow: 1px 0 0 var(--be-light);
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    cursor: default;
+  }
+
+  .be-deskbar__leaf-button:hover {
+    background: linear-gradient(180deg, var(--be-yellow-hi), var(--be-yellow));
+  }
+
+  /* The menu itself, dropped from the leaf. The Deskbar's stacking context
+     already sits above the desktop, so nothing can get in front of it. */
+  .be-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 30;
+    min-width: 200px;
+    padding: 3px;
+    background: var(--be-panel);
+    border: 1px solid var(--be-outline);
+    box-shadow:
+      inset 1px 1px 0 var(--be-light),
+      inset -1px -1px 0 var(--be-shadow),
+      2px 2px 6px rgba(0, 0, 0, 0.35);
+  }
+
+  .be-dropdown__item {
+    display: block;
+    width: 100%;
+    padding: 3px 18px 3px 10px;
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    white-space: nowrap;
+    color: var(--be-ink);
+    background: none;
+    border: 1px solid transparent;
+    cursor: default;
+  }
+
+  .be-dropdown__item:hover {
+    background: linear-gradient(180deg, var(--be-yellow-hi), var(--be-yellow));
+    border-color: var(--be-shadow);
+  }
+
+  .be-dropdown__separator {
+    height: 0;
+    margin: 3px 2px;
+    border: 0;
+    border-top: 1px solid var(--be-shadow);
+    border-bottom: 1px solid var(--be-light);
+  }
+
+  /* hostname · firmware nickname, so a fresh upload is visible at a glance */
+  .be-deskbar__title {
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
   }
 
   .be-deskbar__tray {
@@ -139,7 +206,7 @@
     border-radius: 2px;
     color: var(--be-ink-soft);
     background: transparent;
-    cursor: pointer;
+    cursor: default;
   }
 
   .be-deskbar__app:hover {
@@ -221,12 +288,12 @@
   /* The tab strip is the drag handle. touch-action keeps a touch drag from
      scrolling the page out from under the window. */
   .be-window [data-drag-handle] {
-    cursor: grab;
+    cursor: default;
     touch-action: none;
   }
 
   .be-window--dragging [data-drag-handle] {
-    cursor: grabbing;
+    cursor: default;
   }
 
   .be-window--active {
@@ -252,7 +319,7 @@
     padding: 0 calc(var(--be-tab-slant) + 8px) 0 8px;
     background: var(--be-outline);
     clip-path: polygon(0 0, calc(100% - var(--be-tab-slant)) 0, 100% 100%, 0 100%);
-    cursor: pointer;
+    cursor: default;
     user-select: none;
   }
 
@@ -298,7 +365,7 @@
     padding: 0;
     border: 1px solid var(--be-shadow-deep);
     background: linear-gradient(180deg, #f6f6f6, #cfcfcf);
-    cursor: pointer;
+    cursor: default;
   }
 
   /* BeOS drew a bare square here. The cross costs nothing and means nobody
@@ -406,7 +473,7 @@
     bottom: 0;
     width: 16px;
     height: 16px;
-    cursor: nwse-resize;
+    cursor: default;
     touch-action: none;
     background-image:
       linear-gradient(var(--be-shadow-deep) 1px, transparent 1px),
@@ -470,7 +537,7 @@
     box-shadow:
       inset 1px 1px 0 var(--be-light),
       inset -1px -1px 0 rgba(0, 0, 0, 0.08);
-    cursor: pointer;
+    cursor: default;
     transition: filter 90ms ease-out;
   }
 
@@ -601,7 +668,7 @@
     color: inherit;
     background: none;
     border: 0;
-    cursor: pointer;
+    cursor: default;
   }
 
   .be-table th button:hover {
@@ -646,7 +713,7 @@
     color: var(--be-shadow);
     background: var(--be-panel);
     box-shadow: inset 1px 1px 0 var(--be-light);
-    cursor: not-allowed;
+    cursor: default;
   }
 
   .be-btn:disabled:hover {
@@ -730,7 +797,7 @@
     color: var(--be-ink);
     background: none;
     border: 0;
-    cursor: pointer;
+    cursor: default;
   }
 
   .be-list__row:hover {
@@ -815,7 +882,7 @@
     padding: 6px 2px;
     background: none;
     border: 1px dotted transparent;
-    cursor: pointer;
+    cursor: default;
   }
 
   .be-icon-tile img {
@@ -870,7 +937,7 @@
     color: var(--be-link);
     background: none;
     border: 1px solid transparent;
-    cursor: pointer;
+    cursor: default;
   }
 
   .be-path__crumb + .be-path__crumb::before {
@@ -936,7 +1003,7 @@
   }
 
   .be-table--browse tbody tr[phx-click] {
-    cursor: pointer;
+    cursor: default;
   }
 
   .be-table--browse tbody tr[aria-disabled="true"] {
@@ -1019,5 +1086,148 @@
 
   .be-window__body::-webkit-scrollbar-thumb:hover {
     background: linear-gradient(180deg, var(--be-yellow-hi), var(--be-yellow));
+  }
+}
+
+/* ---------------------------------------------------------------- terminal */
+/* The IEx window. BeOS's Terminal was black on white too. */
+@layer components {
+  .be-terminal {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 220px;
+    max-height: 60vh;
+    padding: 6px 8px;
+    overflow: auto;
+    font-family: "DejaVu Sans Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--be-ink);
+    background: var(--be-document);
+    border: 1px solid var(--be-shadow-deep);
+    box-shadow:
+      inset 1px 1px 0 var(--be-shadow),
+      inset -1px -1px 0 var(--be-light);
+    cursor: text;
+  }
+
+  .be-window--sized .be-terminal {
+    max-height: none;
+  }
+
+  .be-terminal__out {
+    margin: 0;
+    font: inherit;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .be-terminal__line {
+    display: flex;
+    align-items: baseline;
+    font: inherit;
+  }
+
+  .be-terminal__prompt {
+    white-space: pre;
+  }
+
+  .be-terminal__input {
+    flex: 1;
+    min-width: 4ch;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    outline: 0;
+  }
+
+  .be-terminal__ended {
+    margin-top: 6px;
+    color: var(--be-ink-soft);
+  }
+
+  /* The sixteen ANSI colours, tuned to read on the white document. */
+  .ansi-b { font-weight: 700; }
+  .ansi-i { font-style: italic; }
+  .ansi-u { text-decoration: underline; }
+  .ansi-fg-0 { color: #101010; }
+  .ansi-fg-1 { color: #c0392b; }
+  .ansi-fg-2 { color: #2f9e44; }
+  .ansi-fg-3 { color: #b7791f; }
+  .ansi-fg-4 { color: #12459a; }
+  .ansi-fg-5 { color: #8e44ad; }
+  .ansi-fg-6 { color: #0e7c86; }
+  .ansi-fg-7 { color: #7f7f7f; }
+  .ansi-fg-8 { color: #6d6d6d; }
+  .ansi-fg-9 { color: #e74c3c; }
+  .ansi-fg-10 { color: #3cb35a; }
+  .ansi-fg-11 { color: #d9a520; }
+  .ansi-fg-12 { color: #2b6cd4; }
+  .ansi-fg-13 { color: #b455d3; }
+  .ansi-fg-14 { color: #17a2b8; }
+  .ansi-fg-15 { color: #101010; }
+  .ansi-bg-0 { background: #101010; color: #ffffff; }
+  .ansi-bg-1 { background: #c0392b; color: #ffffff; }
+  .ansi-bg-2 { background: #2f9e44; color: #ffffff; }
+  .ansi-bg-3 { background: #f4d35e; }
+  .ansi-bg-4 { background: #12459a; color: #ffffff; }
+  .ansi-bg-5 { background: #8e44ad; color: #ffffff; }
+  .ansi-bg-6 { background: #0e7c86; color: #ffffff; }
+  .ansi-bg-7 { background: #e0e0e0; }
+  .ansi-bg-8 { background: #6d6d6d; color: #ffffff; }
+  .ansi-bg-9 { background: #e74c3c; color: #ffffff; }
+  .ansi-bg-10 { background: #3cb35a; color: #ffffff; }
+  .ansi-bg-11 { background: #ffe066; }
+  .ansi-bg-12 { background: #2b6cd4; color: #ffffff; }
+  .ansi-bg-13 { background: #b455d3; color: #ffffff; }
+  .ansi-bg-14 { background: #17a2b8; color: #ffffff; }
+  .ansi-bg-15 { background: #f4f4f4; }
+}
+
+/* ---------------------------------------------------------------- cursors */
+/* BeOS pointed the arrow at everything, windows being dragged included; the
+   hand is a web habit. Only text keeps the I-beam. */
+@layer components {
+  a,
+  button,
+  summary,
+  [phx-click],
+  [data-drag-handle],
+  [data-resize-handle] {
+    cursor: default;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="submit"]):not([type="button"]),
+  textarea,
+  [contenteditable="true"] {
+    cursor: text;
+  }
+
+  /* The forms plugin rings a focused text field in blue. A terminal has no
+     field to ring, and a BeOS field just gets a darker border. */
+  .be-terminal__input:focus {
+    outline: none;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .be-input {
+    height: 25px;
+    padding: 0 8px;
+    font-size: 12px;
+    color: var(--be-ink);
+    background: var(--be-document);
+    border: 1px solid var(--be-shadow-deep);
+    border-radius: 0;
+    box-shadow: inset 1px 1px 0 var(--be-shadow);
+  }
+
+  .be-input:focus {
+    outline: none;
+    border-color: var(--be-outline);
+    box-shadow: inset 1px 1px 0 var(--be-shadow);
   }
 }

@@ -44,14 +44,33 @@ defmodule HelloLiveView.DeviceInfo do
   @doc "Firmware metadata out of the Nerves key-value store."
   @spec firmware() :: map()
   def firmware do
+    # "adjective-noun (uuid)", the same nickname fwup and NervesMOTD use.
+    id = maybe_call(NervesMOTD.Runtime.Target, :firmware_id, [])
+
     %{
       product: kv("nerves_fw_product") || to_string(@app),
       version: kv("nerves_fw_version") || app_version(),
-      # "adjective-noun (uuid)", the same nickname fwup and NervesMOTD use.
-      id: maybe_call(NervesMOTD.Runtime.Target, :firmware_id, []),
+      id: id,
+      nickname: nickname_from_id(id),
       validity: firmware_validity(),
       partition: active_partition()
     }
+  end
+
+  # "brave-otter (5d3a...)" -> "brave-otter". The nickname alone tells two
+  # builds apart at a glance, which is all a window title needs.
+  @doc false
+  @spec nickname_from_id(String.t() | nil) :: String.t() | nil
+  def nickname_from_id(nil), do: nil
+  def nickname_from_id("unknown"), do: nil
+  def nickname_from_id(id), do: id |> String.split(" (", parts: 2) |> hd()
+
+  @doc "hostname · firmware nickname, or just the hostname on a host."
+  @spec title(map()) :: String.t()
+  def title(device) do
+    [device.hostname, device.firmware.nickname]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
   end
 
   defp firmware_validity do

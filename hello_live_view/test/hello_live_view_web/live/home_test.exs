@@ -109,6 +109,103 @@ defmodule HelloLiveViewWeb.HomeTest do
     refute has_element?(view, "#i2c")
   end
 
+  test "the title and the Deskbar carry the hostname", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+    hostname = HelloLiveView.DeviceInfo.hostname()
+
+    assert page_title(view) =~ hostname
+    assert has_element?(view, ".be-deskbar__title", hostname)
+  end
+
+  # The IEx session answers on its own time.
+  defp eventually(fun, attempts \\ 60) do
+    cond do
+      fun.() -> true
+      attempts == 0 -> false
+      true -> Process.sleep(50) && eventually(fun, attempts - 1)
+    end
+  end
+
+  test "the IEx window runs a real IEx session with Toolshed", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+    view |> element("button.be-icon-tile[phx-value-id=iex]") |> render_click()
+
+    assert eventually(fn -> render(view) =~ "Interactive Elixir" end)
+    assert eventually(fn -> render(view) =~ "iex(1)&gt;" end)
+
+    view |> form("#iex form", line: "21 * 2") |> render_submit()
+    assert eventually(fn -> render(view) =~ "42" end)
+    # What was typed is echoed, as a terminal would.
+    assert render(view) =~ "iex(1)&gt; 21 * 2"
+
+    view |> form("#iex form", line: ~s|cmd("echo toolshed-ok")|) |> render_submit()
+    assert eventually(fn -> render(view) =~ "toolshed-ok" end)
+
+    shell = assigns(view).shell
+    assert Process.alive?(shell)
+    render_click(view, "close", %{"id" => "iex"})
+    refute Process.alive?(shell)
+    assert assigns(view).shell == nil
+  end
+
+  test "the leaf menu opens About This System", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view |> element("#deskbar-menu button", "About This System") |> render_click()
+    assert has_element?(view, "#system")
+  end
+
+  test "the leaf menu asks before restarting or shutting down", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    html = view |> element("#deskbar-menu button", "Restart…") |> render_click()
+    assert html =~ "Do you really want to restart the system?"
+    assert has_element?(view, "#power-restart")
+
+    # Picking the other question replaces the first.
+    html = view |> element("#deskbar-menu button", "Shut Down…") |> render_click()
+    assert html =~ "Do you really want to shut down the system?"
+    refute has_element?(view, "#power-restart")
+
+    # On the host there is no device; saying so is all that happens.
+    html = view |> element("#power-shut-down button", "Shut Down") |> render_click()
+    assert html =~ "running on the host"
+    assert Process.alive?(view.pid)
+
+    view |> element("#power-shut-down button", "OK") |> render_click()
+    refute has_element?(view, "#power-shut-down")
+    assert assigns(view).power == nil
+  end
+
+  test "Cancel and Escape both drop the question", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view |> element("#deskbar-menu button", "Restart…") |> render_click()
+    view |> element("#power-restart button", "Cancel") |> render_click()
+    refute has_element?(view, "#power-restart")
+
+    view |> element("#deskbar-menu button", "Restart…") |> render_click()
+    render_keydown(view, "close_top", %{"key" => "Escape"})
+    refute has_element?(view, "#power-restart")
+    assert assigns(view).power == nil
+  end
+
+  test "the WiFi window says so when there is no WiFi to configure", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    html = view |> element("button.be-icon-tile[phx-value-id=wifi]") |> render_click()
+    assert html =~ "no WiFi to configure here"
+    assert html =~ "wlan0"
+
+    # Events for a window with nothing behind it are shrugged off.
+    render_click(view, "wifi_rescan", %{})
+    render_click(view, "wifi_select", %{"ssid" => "home"})
+    assert Process.alive?(view.pid)
+
+    render_click(view, "close", %{"id" => "wifi"})
+    assert assigns(view).wifi == nil
+  end
+
   test "the Applications window lists loaded applications", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 
