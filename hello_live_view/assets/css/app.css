@@ -152,6 +152,34 @@
       2px 2px 6px rgba(0, 0, 0, 0.35);
   }
 
+  .be-deskbar__fold {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .be-dropdown--right {
+    right: 0;
+    left: auto;
+  }
+
+  .be-dropdown__item--window {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .be-dropdown__item--window[aria-current="true"] {
+    font-weight: 700;
+  }
+
+  .be-deskbar__app-title {
+    max-width: 40vw;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   .be-dropdown__item {
     display: block;
     width: 100%;
@@ -187,6 +215,7 @@
   }
 
   .be-deskbar__tray {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 2px;
@@ -290,8 +319,9 @@
   }
 
   /* Zoom: grow to the full desktop width, keeping the current y. */
+  /* Zoomed geometry is inline (see Desktop.window/1); the cap must not undo it. */
   .be-window--zoomed {
-    width: calc(100% - 16px);
+    max-width: none;
   }
 
   /* No shadow transition while dragging — it reads as lag. */

@@ -130,7 +130,22 @@ defmodule HelloLiveView.MixProject do
       {:nerves_system_x86_64, "~> 1.19", runtime: false, targets: :x86_64},
       {:nerves_system_trellis, "~> 0.4", runtime: false, targets: :trellis},
       {:nerves_system_mangopi_mq_pro, "~> 0.4", runtime: false, targets: :mangopi_mq_pro},
-      {:kiosk_system_rpi4, "~> 2.1", runtime: false, targets: :kiosk_rpi4},
+      # Fork of kiosk_system_rpi4 2.1.2 with CONFIG_BACKLIGHT_PWM=m, which the
+      # Raspberry Pi Touch Display 2 needs. Upstream raspberrypi/linux d493058
+      # split the backlight out of rpi-panel-v2-regulator into a generic
+      # pwm-backlight node, and the stock defconfig never enabled that driver:
+      # the panel probe defers forever, vc4-drm never registers a DRM device and
+      # Weston dies with "failed to create compositor backend".
+      #
+      # A prebuilt artifact is attached to the release, so this does not build
+      # from source. The checksum in the asset name is derived from the system
+      # source, so a new commit on that branch needs a rebuilt artifact.
+      # Revert to {:kiosk_system_rpi4, "~> 2.1"} once the fix lands upstream.
+      {:kiosk_system_rpi4,
+       github: "lawik/kiosk_system_rpi4",
+       tag: "v2.1.3-pwm-backlight.1",
+       runtime: false,
+       targets: :kiosk_rpi4},
       {:kiosk_system_rpi5, "~> 2.1", runtime: false, targets: :kiosk_rpi5},
       {:recomputer_r22, github: "lawik/recomputer_r22", targets: :recomputer_r22},
 

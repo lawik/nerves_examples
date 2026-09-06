@@ -38,6 +38,8 @@ const WindowFrame = {
 
     this.onPointerDown = (event) => {
       if (event.button !== 0) return
+      // A zoomed window is where the zoom put it; unzoom to move or size it.
+      if (this.el.classList.contains("be-window--zoomed")) return
       const resizing = this.resizeHandle && this.resizeHandle.contains(event.target)
       // Let the close and zoom boxes be clicked without starting a drag.
       if (!resizing && event.target.closest(".be-tab__button")) return
@@ -111,8 +113,9 @@ const WindowFrame = {
     }
   },
 
-  // Everything stays inside the desktop, so a window can never be pushed or
-  // shrunk out of reach.
+  // A window may be pushed off the sides or the bottom to get it out of the
+  // way, as long as a strip of it stays on the desktop to drag it back by;
+  // never off the top, where its tab could not be reached again.
   apply(dx, dy, reassert = false) {
     const desktop = this.el.offsetParent
     const maxW = desktop ? desktop.clientWidth : Infinity
@@ -128,7 +131,7 @@ const WindowFrame = {
       this.el.classList.add("be-window--sized")
     } else {
       if (!reassert) {
-        this.currentX = Math.round(clamp(this.gesture.startX + dx, 0, Math.max(maxW - this.el.offsetWidth, 0)))
+        this.currentX = Math.round(clamp(this.gesture.startX + dx, GRAB - this.el.offsetWidth, maxW - GRAB))
         this.currentY = Math.round(clamp(this.gesture.startY + dy, 0, Math.max(maxH - 34, 0)))
       }
       this.el.style.transform = `translate3d(${this.currentX}px, ${this.currentY}px, 0)`
@@ -137,6 +140,28 @@ const WindowFrame = {
 }
 
 const clamp = (value, low, high) => Math.min(Math.max(value, low), Math.max(high, low))
+
+// How much of a window must stay on the desktop when it is pushed off an edge.
+const GRAB = 60
+
+// Tells the server how big the desktop is, so windows can be placed to fit
+// it: once on connect, and again when that changes, as when a phone turns.
+const Desktop = {
+  mounted() {
+    this.report = () => this.pushEvent("viewport", {w: this.el.clientWidth, h: this.el.clientHeight})
+    this.onResize = () => {
+      clearTimeout(this.timer)
+      this.timer = setTimeout(this.report, 150)
+    }
+    window.addEventListener("resize", this.onResize)
+    this.report()
+  },
+
+  destroyed() {
+    window.removeEventListener("resize", this.onResize)
+    clearTimeout(this.timer)
+  }
+}
 
 // The IEx window. The server streams what IEx prints and asks for lines;
 // everything a terminal does on top of that lives here: keep the newest
@@ -198,7 +223,7 @@ const Terminal = {
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  hooks: {WindowFrame, Terminal},
+  hooks: {WindowFrame, Terminal, Desktop},
   params: {_csrf_token: csrfToken}
 })
 

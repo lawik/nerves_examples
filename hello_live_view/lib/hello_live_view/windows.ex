@@ -54,6 +54,11 @@ defmodule HelloLiveView.Windows do
   @min_width 260
   @min_height 140
 
+  # Fitting: a window narrowed to a viewport leaves this much desktop on each
+  # side, and one that has never been resized is taken to be this tall.
+  @fit_margin 12
+  @assumed_height 320
+
   # ------------------------------------------------------------------- client
 
   def start_link(opts \\ []) do
@@ -89,7 +94,21 @@ defmodule HelloLiveView.Windows do
   @spec resize(id(), integer(), integer()) :: %{id() => window()}
   def resize(id, width, height), do: GenServer.call(__MODULE__, {:resize, id, width, height})
 
-  @doc "Toggle a window between its placed size and full desktop width."
+  @doc """
+  Bring windows inside a viewport of `{width, height}` pixels.
+
+  Each is moved so it sits inside; one wider than the viewport is narrowed
+  to fit with a little desktop showing on either side, and one taller, if
+  its height is known, is shortened the same way. A window that has never
+  been resized has no width of its own, so each comes with the default it
+  is rendered at. Positions are persisted, so a phone's fitting is what a
+  bigger screen sees next, which still fits.
+  """
+  @spec fit([{id(), pos_integer()}], {pos_integer(), pos_integer()}) :: %{id() => window()}
+  def fit(ids_and_widths, viewport),
+    do: GenServer.call(__MODULE__, {:fit, ids_and_widths, viewport})
+
+  @doc "Toggle a window between its placed size and filling the desktop."
   @spec toggle_zoom(id()) :: %{id() => window()}
   def toggle_zoom(id), do: GenServer.call(__MODULE__, {:toggle_zoom, id})
 
@@ -165,8 +184,11 @@ defmodule HelloLiveView.Windows do
     windows = load(state.table)
 
     case Map.fetch(windows, id) do
+      # A window may hang off the sides or the bottom, out of the way; the
+      # browser keeps a grabbable strip of it in view. Only up is off limits,
+      # since a tab above the desktop cannot be reached again.
       {:ok, window} ->
-        moved = %{window | x: max(x, 0), y: max(y, 0)}
+        moved = %{window | x: max(x, -10_000), y: max(y, 0)}
         {:reply, commit(state.table, put_and_raise(state.table, windows, moved)), state}
 
       :error ->
@@ -185,6 +207,20 @@ defmodule HelloLiveView.Windows do
       :error ->
         {:reply, windows, state}
     end
+  end
+
+  def handle_call({:fit, ids_and_widths, {vw, vh}}, _from, state) do
+    windows = load(state.table)
+
+    fitted =
+      Enum.reduce(ids_and_widths, windows, fn {id, default_width}, acc ->
+        case Map.fetch(acc, id) do
+          {:ok, window} -> put(state.table, acc, fit_window(window, default_width, vw, vh))
+          :error -> acc
+        end
+      end)
+
+    {:reply, commit(state.table, fitted), state}
   end
 
   def handle_call({:toggle_zoom, id}, _from, state) do
@@ -246,6 +282,26 @@ defmodule HelloLiveView.Windows do
     ordered
     |> Enum.with_index(1)
     |> Enum.reduce(windows, fn {w, z}, acc -> put(table, acc, %{w | z: z}) end)
+  end
+
+  defp fit_window(window, default_width, vw, vh) do
+    widest = max(vw - 2 * @fit_margin, @min_width)
+    tallest = max(vh - 2 * @fit_margin, @min_height)
+
+    # nil stays nil: a window that fits at its default width is left unsized.
+    w = if (window.w || default_width) > widest, do: widest, else: window.w
+    h = if window.h && window.h > tallest, do: tallest, else: window.h
+
+    width = w || default_width
+    height = h || min(@assumed_height, vh)
+
+    %{
+      window
+      | w: w,
+        h: h,
+        x: window.x |> min(max(vw - width, 0)) |> max(0),
+        y: window.y |> min(max(vh - height, 0)) |> max(0)
+    }
   end
 
   defp place_new(id, windows) do

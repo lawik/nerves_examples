@@ -194,6 +194,7 @@ defmodule HelloLiveViewWeb.Home do
       |> assign(:wifi, nil)
       |> assign(:camera, nil)
       |> assign(:camera_notice, nil)
+      |> assign(:viewport, nil)
       |> assign(:mobius, nil)
       |> assign(:mobius_range, Metrics.default_range())
       |> assign(:mobius_notice, nil)
@@ -292,10 +293,20 @@ defmodule HelloLiveViewWeb.Home do
   end
 
   @impl true
+  # The browser saying how big the desktop is, on connect and whenever that
+  # changes. Every open window is made to fit it.
+  def handle_event("viewport", %{"w" => w, "h" => h}, socket)
+      when is_integer(w) and is_integer(h) and w > 0 and h > 0 do
+    fitted = Windows.fit(Enum.map(socket.assigns.open, &{&1, window_width(&1)}), {w, h})
+    {:noreply, socket |> assign(:viewport, {w, h}) |> assign_windows(fitted)}
+  end
+
+  def handle_event("viewport", _params, socket), do: {:noreply, socket}
+
   def handle_event("open", %{"id" => id}, socket) do
     {:noreply,
      socket
-     |> assign_windows(Windows.open(id))
+     |> assign_windows(open_fitted(id, socket.assigns.viewport))
      |> refresh_processes()
      |> refresh_cpu()
      |> track(id)}
@@ -1084,13 +1095,42 @@ defmodule HelloLiveViewWeb.Home do
     |> refresh_processes(force: true)
   end
 
+  # Open a window and, once the browser has said how big the desktop is,
+  # make sure it sits inside.
+  defp open_fitted(id, nil), do: Windows.open(id)
+
+  defp open_fitted(id, viewport) do
+    _opened = Windows.open(id)
+    Windows.fit([{id, window_width(id)}], viewport)
+  end
+
+  # The width a window is rendered at until someone resizes it, as the
+  # templates below set it.
+  defp window_width("app-" <> _name), do: 520
+  defp window_width("edit-" <> _path), do: 560
+  defp window_width("alert-" <> _path), do: 400
+  defp window_width("power-" <> _action), do: 400
+
+  defp window_width(id) do
+    case Enum.find(@apps, &(&1.id == id)) do
+      %{width: width} -> width
+      nil -> 460
+    end
+  end
+
   # Windows we have no state for yet are simply not open.
   defp placement(windows, id), do: Map.get(windows, id, %{x: 0, y: 0, z: 1, zoomed?: false})
 
   @impl true
   def render(assigns) do
     ~H"""
-    <div id="desktop" class="be-desktop" phx-window-keydown="close_top" phx-key="Escape">
+    <div
+      id="desktop"
+      class="be-desktop"
+      phx-hook="Desktop"
+      phx-window-keydown="close_top"
+      phx-key="Escape"
+    >
       <aside class="be-desktop__icons" aria-label="Desktop">
         <.desktop_icon
           :for={app <- @apps}

@@ -88,6 +88,10 @@ defmodule HelloLiveViewWeb.Components.Desktop do
 
   Drag by the tab strip, the way you would on a real one.
   """
+  # A zoomed window fills the desktop but for this much on every side, so the
+  # desktop, and whatever is behind, can still be reached.
+  @zoom_margin 16
+
   attr :id, :string, required: true
   attr :title, :string, required: true
   attr :window, :map, required: true, doc: "%{x:, y:, z:, zoomed?:} from HelloLiveView.Windows"
@@ -108,7 +112,7 @@ defmodule HelloLiveViewWeb.Components.Desktop do
         "be-window",
         @active && "be-window--active",
         @window.zoomed? && "be-window--zoomed",
-        @window.h && "be-window--sized",
+        (@window.zoomed? or @window.h) && "be-window--sized",
         @class
       ]}
       style={window_style(@window, @width)}
@@ -159,10 +163,14 @@ defmodule HelloLiveViewWeb.Components.Desktop do
     """
   end
 
-  # A zoomed window pins to the left edge and spans the desktop, keeping its y.
-  defp window_style(%{zoomed?: true} = window, _width),
-    do:
-      "transform: translate3d(0, #{window.y}px, 0); z-index: #{window.z};#{size_style(window, nil)}"
+  # A zoomed window fills the desktop, a margin all round. The desktop's size
+  # is only known in the browser, so the geometry is in its units.
+  defp window_style(%{zoomed?: true} = window, _width) do
+    inset = "#{@zoom_margin}px"
+    span = "calc(100% - #{2 * @zoom_margin}px)"
+
+    "transform: translate3d(#{inset}, #{inset}, 0); z-index: #{window.z}; width: #{span}; height: #{span};"
+  end
 
   defp window_style(window, width),
     do:
@@ -322,18 +330,53 @@ defmodule HelloLiveViewWeb.Components.Desktop do
         </div>
       </div>
 
-      <nav :if={@apps != []} class="be-deskbar__tray" aria-label="Running windows">
+      <nav
+        :if={@apps != []}
+        class="be-deskbar__tray"
+        aria-label="Running windows"
+        phx-click-away={JS.hide(to: "#deskbar-windows")}
+      >
+        <%!-- Room for every window on a wide screen... --%>
         <button
           :for={app <- @apps}
           type="button"
-          class="be-deskbar__app"
+          class="be-deskbar__app hidden sm:inline-flex"
           phx-click="open"
           phx-value-id={app.id}
           aria-pressed={to_string(app.id == @focused)}
         >
           <.haiku_icon name={app.icon} size={16} />
-          <span class="hidden sm:inline">{app.title}</span>
+          <span>{app.title}</span>
         </button>
+
+        <%!-- ...and on a phone, the one on top, with the rest behind it. --%>
+        <div class="be-deskbar__fold sm:hidden">
+          <button
+            type="button"
+            class="be-deskbar__app"
+            phx-click={JS.toggle(to: "#deskbar-windows")}
+            aria-haspopup="menu"
+            aria-controls="deskbar-windows"
+          >
+            <.haiku_icon name={focused_app(@apps, @focused).icon} size={16} />
+            <span class="be-deskbar__app-title">{focused_app(@apps, @focused).title}</span>
+            <span aria-hidden="true">▾</span>
+          </button>
+
+          <div id="deskbar-windows" class="be-dropdown be-dropdown--right hidden" role="menu">
+            <button
+              :for={app <- @apps}
+              type="button"
+              role="menuitem"
+              class="be-dropdown__item be-dropdown__item--window"
+              phx-click={JS.hide(to: "#deskbar-windows") |> JS.push("open", value: %{id: app.id})}
+              aria-current={to_string(app.id == @focused)}
+            >
+              <.haiku_icon name={app.icon} size={16} />
+              <span>{app.title}</span>
+            </button>
+          </div>
+        </div>
       </nav>
 
       <div class="be-deskbar__clock">
@@ -346,4 +389,7 @@ defmodule HelloLiveViewWeb.Components.Desktop do
 
   # A menu pick closes the menu on its way to the server.
   defp pick(js), do: JS.hide(js, to: "#deskbar-menu")
+
+  # The tray names the window on top; with none on top yet, the first.
+  defp focused_app(apps, focused), do: Enum.find(apps, hd(apps), &(&1.id == focused))
 end

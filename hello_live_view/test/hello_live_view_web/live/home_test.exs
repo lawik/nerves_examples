@@ -267,6 +267,31 @@ defmodule HelloLiveViewWeb.HomeTest do
     assert render(view) =~ "Milesight camera"
   end
 
+  test "windows are placed to fit the desktop the browser reports", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    # Opened before the size is known: the default width, the cascade origin.
+    render_click(view, "open", %{"id" => "processes"})
+    assert %{w: nil, x: 116} = assigns(view).windows["processes"]
+
+    # A phone turns up: what is open is narrowed and pulled in...
+    render_hook(view, "viewport", %{"w" => 360, "h" => 640})
+    assert %{w: 336, x: 24} = assigns(view).windows["processes"]
+    assert has_element?(view, "#processes[style*='width: 336px']")
+
+    # ...and what opens next is placed to fit from the start.
+    render_click(view, "open", %{"id" => "network"})
+    assert %{w: 336, x: 24} = assigns(view).windows["network"]
+
+    # A zoomed window fills the desktop but for a margin, in the browser's units.
+    render_click(view, "zoom", %{"id" => "network"})
+
+    assert has_element?(
+             view,
+             "#network.be-window--zoomed.be-window--sized[style*='calc(100% - 32px)']"
+           )
+  end
+
   test "the Applications window lists loaded applications", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 
