@@ -11,11 +11,38 @@ module.exports = {
     "../lib/*_web.ex",
     "../lib/*_web/**/*.*ex"
   ],
+  // The .be-* chrome in css/app.css is a small design system: keep every part
+  // of it in the bundle even when nothing on the page happens to use it yet,
+  // so reaching for `.be-btn` in a new template just works.
+  safelist: [{ pattern: /^be-/ }],
   theme: {
     extend: {
       colors: {
         brand: "#FD4F00",
-      }
+        // A modern reading of the BeOS/Haiku palette. The same values are
+        // exposed as CSS custom properties (--be-*) in css/app.css.
+        be: {
+          panel: "#d8d8d8",
+          "panel-hi": "#eaeaea",
+          "panel-lo": "#c4c4c4",
+          light: "#ffffff",
+          shadow: "#9a9a9a",
+          "shadow-deep": "#6d6d6d",
+          outline: "#2c2c2c",
+          yellow: "#ffcb00",
+          "yellow-hi": "#ffe066",
+          "yellow-lo": "#e8ac00",
+          desktop: "#336698",
+          ink: "#101010",
+          "ink-soft": "#4a4a4a",
+          link: "#12459a",
+          nerves: "#fd4f00",
+        },
+      },
+      fontFamily: {
+        sans: ['"Helvetica Neue"', "Helvetica", "Arial", '"Liberation Sans"', "system-ui", "sans-serif"],
+        mono: ['"DejaVu Sans Mono"', "ui-monospace", '"SF Mono"', "Menlo", "Consolas", "monospace"],
+      },
     },
   },
   plugins: [

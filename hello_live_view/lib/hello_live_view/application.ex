@@ -9,6 +9,8 @@ defmodule HelloLiveView.Application do
   def start(_type, _args) do
     children =
       [
+        # Persistent windowing state (:dets under /data on a device)
+        HelloLiveView.Windows,
         # Start the Telemetry supervisor
         HelloLiveViewWeb.Telemetry,
         # Start the PubSub system
@@ -36,9 +38,8 @@ defmodule HelloLiveView.Application do
 
   def children(_target) do
     [
-      # Children for all targets except host
-      # Starts a worker by calling: HelloLiveView.Worker.start_link(arg)
-      # {HelloLiveView.Worker, arg},
+      # Validate new firmware once an interface reports internet
+      HelloLiveView.FirmwareValidator
     ]
   end
 

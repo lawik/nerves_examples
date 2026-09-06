@@ -28,11 +28,26 @@ hello_live_view-*.tar
 # Ignore assets that are produced by build tools.
 /priv/static/assets/
 
-# Ignore digested assets cache.
+# `mix phx.digest` (which `mix assets.deploy` runs) rewrites priv/static in
+# place: a cache manifest, a gzipped copy of every file, and an md5-stamped
+# duplicate of every file, all sitting next to the originals. It is generated
+# output, regenerated on every deploy, so only the hand-authored source files
+# belong in the repo.
+#
+# The 32 `?` are the md5 stamp. Two patterns are needed because digest keeps
+# the extension when there is one (nerves-<md5>.svg) and drops it when there
+# is not (images/haiku/LICENSE-<md5>).
 /priv/static/cache_manifest.json
+/priv/static/**/*.gz
+/priv/static/**/*-????????????????????????????????
+/priv/static/**/*-????????????????????????????????.*
 
 # In case you use Node.js/npm, you want to ignore these.
 npm-debug.log
 /assets/node_modules/
 
 .DS_Store
+
+# Local shell environment. Holds NERVES_SSID / NERVES_PSK, so it must never be
+# committed — see the Network Configuration section of the README.
+/.envrc

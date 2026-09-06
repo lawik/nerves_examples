@@ -2,4 +2,618 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
-/* This file is for your main application CSS */
+/* ==========================================================================
+   HelloLiveView — a modern interpretation of BeOS / Haiku
+   --------------------------------------------------------------------------
+   The chrome lives in @layer components so Tailwind utilities always win when
+   you mix them in markup, as in class="be-panel p-6". Tailwind scans the web
+   templates (see content in tailwind.config.js), so any .be- class you use in
+   a HEEx template survives the purge.
+
+   Measurements follow Haiku's app_server defaults (panel grey rgb(216,216,216),
+   window tab yellow rgb(255,203,0), 1px bevels) but with softer shadows,
+   smoother gradients and roomier type than the 1999 original.
+   ========================================================================== */
+
+@layer base {
+  :root {
+    /* Surfaces */
+    --be-panel: #d8d8d8;
+    --be-panel-hi: #eaeaea;
+    --be-panel-lo: #c4c4c4;
+    --be-document: #ffffff;
+
+    /* Bevels: 1px white top-left, 1px grey bottom-right */
+    --be-light: #ffffff;
+    --be-shadow: #9a9a9a;
+    --be-shadow-deep: #6d6d6d;
+    --be-outline: #2c2c2c;
+
+    /* Window tabs */
+    --be-yellow: #ffcb00;
+    --be-yellow-hi: #ffe066;
+    --be-yellow-lo: #e8ac00;
+    --be-tab-idle: #cfcfcf;
+    --be-tab-idle-hi: #e6e6e6;
+
+    /* Desktop */
+    --be-desktop: #336698;
+    --be-desktop-hi: #4a80b4;
+
+    /* Ink */
+    --be-ink: #101010;
+    --be-ink-soft: #4a4a4a;
+    --be-link: #12459a;
+    --be-selection: #b8c8e0;
+
+    /* Accents */
+    --be-nerves: #fd4f00;
+    --be-green: #2f9e44;
+
+    --be-tab-slant: 13px;
+  }
+
+  html {
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    color: var(--be-ink);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--be-ink);
+    background-color: var(--be-desktop);
+    background-image:
+      radial-gradient(120% 90% at 50% 0%, var(--be-desktop-hi) 0%, var(--be-desktop) 55%, #29537b 100%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: var(--be-selection);
+    color: var(--be-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--be-yellow);
+    outline-offset: 1px;
+  }
+}
+
+@layer components {
+  /* ---------------------------------------------------------------- bevels */
+  .be-raised {
+    box-shadow:
+      inset 1px 1px 0 var(--be-light),
+      inset -1px -1px 0 var(--be-shadow);
+  }
+
+  .be-sunken {
+    box-shadow:
+      inset 1px 1px 0 var(--be-shadow),
+      inset -1px -1px 0 var(--be-light);
+  }
+
+  /* --------------------------------------------------------------- deskbar */
+  /* Haiku parks this in the top-right corner; here it spans the top edge. */
+  .be-deskbar {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    height: 34px;
+    background: linear-gradient(180deg, var(--be-panel-hi) 0%, var(--be-panel) 45%, var(--be-panel-lo) 100%);
+    border-bottom: 1px solid var(--be-outline);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.35) inset, 0 2px 6px rgba(0, 0, 0, 0.35);
+    position: relative;
+    z-index: 20;
+  }
+
+  .be-deskbar__leaf {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-right: 1px solid var(--be-shadow);
+    box-shadow: 1px 0 0 var(--be-light);
+  }
+
+  .be-deskbar__tray {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 8px;
+    margin-left: auto;
+    border-left: 1px solid var(--be-shadow);
+    box-shadow: inset 1px 0 0 var(--be-light);
+  }
+
+  .be-deskbar__app {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    color: var(--be-ink-soft);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .be-deskbar__app:hover {
+    border-color: var(--be-shadow);
+    background: linear-gradient(180deg, #f0f0f0, #dcdcdc);
+  }
+
+  .be-deskbar__app[aria-pressed="true"] {
+    border-color: var(--be-shadow-deep);
+    background: linear-gradient(180deg, var(--be-yellow-hi), var(--be-yellow));
+    color: var(--be-ink);
+  }
+
+  .be-deskbar__clock {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-end;
+    padding: 0 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+
+  .be-deskbar__clock strong {
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .be-deskbar__clock span {
+    font-size: 10px;
+    color: var(--be-ink-soft);
+  }
+
+  /* --------------------------------------------------------------- desktop */
+  /* The positioning context every window is placed against. Overflow is
+     clipped rather than scrolled, because the drag hook already clamps a
+     window to these bounds — a stray scrollbar would just be noise. */
+  .be-desktop {
+    position: relative;
+    min-height: calc(100vh - 34px);
+    overflow: hidden;
+  }
+
+  .be-desktop__icons {
+    position: absolute;
+    top: 12px;
+    left: 8px;
+    z-index: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .be-desktop__empty {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.85);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    text-align: center;
+  }
+
+  /* ---------------------------------------------------------------- window */
+  .be-window {
+    --be-tab-fill: linear-gradient(180deg, var(--be-tab-idle-hi) 0%, var(--be-tab-idle) 100%);
+    position: absolute;
+    top: 0;
+    left: 0;
+    max-width: calc(100% - 16px);
+    display: flex;
+    flex-direction: column;
+    filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.38));
+    transition: filter 120ms ease-out;
+  }
+
+  /* Zoom: grow to the full desktop width, keeping the current y. */
+  .be-window--zoomed {
+    width: calc(100% - 16px);
+  }
+
+  /* No shadow transition while dragging — it reads as lag. */
+  .be-window--dragging {
+    transition: none;
+    filter: drop-shadow(0 20px 34px rgba(0, 0, 0, 0.5));
+    user-select: none;
+  }
+
+  /* The tab strip is the drag handle. touch-action keeps a touch drag from
+     scrolling the page out from under the window. */
+  .be-window [data-drag-handle] {
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .be-window--dragging [data-drag-handle] {
+    cursor: grabbing;
+  }
+
+  .be-window--active {
+    --be-tab-fill: linear-gradient(180deg, var(--be-yellow-hi) 0%, var(--be-yellow) 55%, var(--be-yellow-lo) 100%);
+    filter: drop-shadow(0 14px 26px rgba(0, 0, 0, 0.45));
+  }
+
+  /* The tab: rectangle with Haiku's slanted right edge, drawn as an outlined
+     shape (parent = outline colour, ::before = 1px-inset fill). */
+  .be-window__tabs {
+    display: flex;
+    align-items: flex-end;
+    padding-left: 6px;
+  }
+
+  .be-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 25px;
+    max-width: 100%;
+    padding: 0 calc(var(--be-tab-slant) + 8px) 0 8px;
+    background: var(--be-outline);
+    clip-path: polygon(0 0, calc(100% - var(--be-tab-slant)) 0, 100% 100%, 0 100%);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .be-tab::before {
+    content: "";
+    position: absolute;
+    inset: 1px 1px -1px 1px;
+    background: var(--be-tab-fill);
+    clip-path: polygon(0 0, calc(100% - var(--be-tab-slant)) 0, 100% 100%, 0 100%);
+  }
+
+  .be-tab > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .be-tab__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .be-tab__title span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Close box on the left, zoom box on the right — as on a real BeOS tab. */
+  .be-tab__button {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    padding: 0;
+    border: 1px solid var(--be-shadow-deep);
+    background: linear-gradient(180deg, #f6f6f6, #cfcfcf);
+    cursor: pointer;
+  }
+
+  .be-tab__button:hover {
+    background: linear-gradient(180deg, #ffffff, #b9b9b9);
+  }
+
+  .be-tab__button:active {
+    background: linear-gradient(180deg, #a8a8a8, #d4d4d4);
+  }
+
+  .be-tab__button--zoom {
+    position: relative;
+  }
+
+  .be-tab__button--zoom::after {
+    content: "";
+    position: absolute;
+    inset: 2px 4px 4px 2px;
+    border: 1px solid var(--be-shadow-deep);
+  }
+
+  .be-window__frame {
+    border: 1px solid var(--be-outline);
+    background: var(--be-panel);
+    box-shadow:
+      inset 1px 1px 0 var(--be-light),
+      inset -1px -1px 0 var(--be-shadow);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* Menu bar strip, straight out of Tracker */
+  .be-window__menu {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 22px;
+    padding: 0 3px;
+    background: var(--be-panel);
+    border-bottom: 1px solid var(--be-shadow);
+    box-shadow: 0 1px 0 var(--be-light);
+  }
+
+  .be-menu-item {
+    padding: 1px 8px;
+    font-size: 12px;
+    color: var(--be-ink);
+    border: 1px solid transparent;
+    cursor: default;
+  }
+
+  .be-menu-item:hover {
+    background: linear-gradient(180deg, var(--be-yellow-hi), var(--be-yellow));
+    border-color: var(--be-shadow);
+  }
+
+  .be-window__body {
+    padding: 14px;
+    min-height: 0;
+    max-height: 72vh;
+    overflow: auto;
+  }
+
+  /* Resize grip in the bottom-right corner */
+  .be-window__grip {
+    height: 14px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-end;
+    padding: 0 3px 3px 0;
+    background: var(--be-panel);
+  }
+
+  .be-window__grip::after {
+    content: "";
+    width: 11px;
+    height: 8px;
+    background-image:
+      linear-gradient(var(--be-shadow-deep) 1px, transparent 1px),
+      linear-gradient(90deg, var(--be-shadow-deep) 1px, transparent 1px);
+    background-size: 4px 4px;
+    opacity: 0.85;
+  }
+
+  /* -------------------------------------------------------------- surfaces */
+  .be-panel {
+    background: var(--be-panel);
+    border: 1px solid var(--be-shadow-deep);
+    box-shadow:
+      inset 1px 1px 0 var(--be-light),
+      inset -1px -1px 0 var(--be-shadow);
+  }
+
+  /* Sunken white content well — a Tracker list view */
+  .be-doc {
+    background: var(--be-document);
+    border: 1px solid var(--be-shadow-deep);
+    box-shadow:
+      inset 1px 1px 0 var(--be-shadow),
+      inset -1px -1px 0 var(--be-light);
+  }
+
+  .be-divider {
+    height: 2px;
+    border: 0;
+    margin: 12px 0;
+    background: linear-gradient(180deg, var(--be-shadow) 50%, var(--be-light) 50%);
+  }
+
+  /* -------------------------------------------------------------- controls */
+  .be-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 25px;
+    padding: 0 14px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--be-ink);
+    background: linear-gradient(180deg, #fbfbfb 0%, #e2e2e2 50%, #cdcdcd 100%);
+    border: 1px solid var(--be-shadow-deep);
+    border-radius: 3px;
+    box-shadow:
+      inset 1px 1px 0 var(--be-light),
+      inset -1px -1px 0 rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+    transition: filter 90ms ease-out;
+  }
+
+  .be-btn:hover {
+    filter: brightness(1.05);
+  }
+
+  .be-btn:active {
+    background: linear-gradient(180deg, #bdbdbd 0%, #d6d6d6 100%);
+    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.22);
+  }
+
+  /* The "default" button wears BeOS's extra ring */
+  .be-btn--default {
+    box-shadow:
+      inset 1px 1px 0 var(--be-light),
+      0 0 0 2px var(--be-yellow),
+      0 0 0 3px var(--be-shadow-deep);
+    margin: 2px;
+  }
+
+  .be-link {
+    color: var(--be-link);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    font-weight: 500;
+  }
+
+  .be-link:hover {
+    color: var(--be-nerves);
+  }
+
+  /* ------------------------------------------------------------- data bits */
+  .be-field {
+    display: grid;
+    grid-template-columns: minmax(96px, max-content) 1fr;
+    gap: 4px 14px;
+    align-items: baseline;
+    font-size: 12px;
+  }
+
+  .be-field dt {
+    color: var(--be-ink-soft);
+    text-align: right;
+  }
+
+  .be-field dd {
+    margin: 0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .be-meter {
+    height: 12px;
+    padding: 1px;
+    background: var(--be-document);
+    border: 1px solid var(--be-shadow-deep);
+    box-shadow:
+      inset 1px 1px 0 var(--be-shadow),
+      inset -1px -1px 0 var(--be-light);
+  }
+
+  .be-meter__fill {
+    height: 100%;
+    background: repeating-linear-gradient(
+      90deg,
+      var(--be-yellow) 0 5px,
+      var(--be-yellow-lo) 5px 6px
+    );
+    transition: width 400ms ease-out;
+  }
+
+  .be-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    background: var(--be-panel-lo);
+    border: 1px solid var(--be-shadow-deep);
+    box-shadow: inset 1px 1px 0 var(--be-light);
+  }
+
+  .be-tag--ok {
+    background: #bfe3c4;
+  }
+
+  .be-tag--warn {
+    background: #ffcf9b;
+  }
+
+  .be-tag--idle {
+    color: var(--be-ink-soft);
+    background: var(--be-panel);
+  }
+
+  /* Past 85% used, Haiku's activity monitor goes red and so do we. */
+  .be-meter__fill--warn {
+    background: repeating-linear-gradient(
+      90deg,
+      #e03131 0 5px,
+      #b02525 5px 6px
+    );
+  }
+
+  /* One row per network interface, Tracker list style */
+  .be-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 8px;
+  }
+
+  .be-row + .be-row {
+    border-top: 1px solid #e4e4e4;
+  }
+
+  .be-mono {
+    font-family: "DejaVu Sans Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+
+  /* ------------------------------------------------------- desktop icons */
+  .be-icon-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: 84px;
+    padding: 6px 2px;
+    background: none;
+    border: 1px dotted transparent;
+    cursor: pointer;
+  }
+
+  .be-icon-tile img {
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4));
+  }
+
+  .be-icon-tile span {
+    font-size: 11px;
+    font-weight: 600;
+    color: #ffffff;
+    text-align: center;
+    padding: 1px 5px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+    border-radius: 2px;
+  }
+
+  .be-icon-tile:hover {
+    border-color: rgba(255, 255, 255, 0.55);
+  }
+
+  .be-icon-tile[aria-pressed="true"] span {
+    background: var(--be-yellow);
+    color: var(--be-ink);
+    text-shadow: none;
+  }
+
+  /* ----------------------------------------------------------- scrollbars */
+  .be-window__body::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+
+  .be-window__body::-webkit-scrollbar-track {
+    background: var(--be-panel-lo);
+    border: 1px solid var(--be-shadow);
+  }
+
+  .be-window__body::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #f2f2f2, #cbcbcb);
+    border: 1px solid var(--be-shadow-deep);
+  }
+
+  .be-window__body::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--be-yellow-hi), var(--be-yellow));
+  }
+}

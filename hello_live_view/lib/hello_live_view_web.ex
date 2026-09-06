@@ -91,7 +91,7 @@ defmodule HelloLiveViewWeb do
       alias Phoenix.LiveView.JS
 
       # Import components
-      import HelloLiveViewWeb.Components.{Text}
+      import HelloLiveViewWeb.Components.{Text, Desktop}
       # Routes generation with the ~p sigil
       unquote(verified_routes())
     end
