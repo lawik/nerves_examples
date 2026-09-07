@@ -16,6 +16,8 @@ defmodule HelloLiveView.MixProject do
     :x86_64,
     :trellis,
     :mangopi_mq_pro,
+    # The emulated board, for running the firmware without hardware.
+    :qemu_aarch64,
     # Seeed reComputer R22xx (CM5): a fork of nerves_system_rpi5 with the
     # board's device tree overlay and drivers, plus the recomputer_r22 library
     # for its buzzer, RGB LED and UPS. See ADDING_THE_TARGET.md in
@@ -130,6 +132,7 @@ defmodule HelloLiveView.MixProject do
       {:nerves_system_x86_64, "~> 1.19", runtime: false, targets: :x86_64},
       {:nerves_system_trellis, "~> 0.4", runtime: false, targets: :trellis},
       {:nerves_system_mangopi_mq_pro, "~> 0.4", runtime: false, targets: :mangopi_mq_pro},
+      {:nerves_system_qemu_aarch64, "~> 0.4", runtime: false, targets: :qemu_aarch64},
       # Fork of kiosk_system_rpi4 2.1.2 with CONFIG_BACKLIGHT_PWM=m, which the
       # Raspberry Pi Touch Display 2 needs. Upstream raspberrypi/linux d493058
       # split the backlight out of rpi-panel-v2-regulator into a generic
