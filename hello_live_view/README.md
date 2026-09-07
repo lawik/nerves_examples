@@ -140,6 +140,54 @@ name=HDMI-A-1
 transform=rotate-270
 ```
 
+## Running in QEMU
+
+The `qemu_aarch64` target runs the firmware in an emulated ARM64 board, no
+hardware needed. Build it, write it into a disk image, and let the system
+generate the QEMU command for your machine:
+
+```bash
+MIX_ENV=prod MIX_TARGET=host mix do deps.get, assets.deploy
+MIX_ENV=prod MIX_TARGET=qemu_aarch64 mix do deps.get, firmware
+MIX_ENV=prod MIX_TARGET=qemu_aarch64 mix firmware.image virtual-disk.img
+MIX_TARGET=qemu_aarch64 mix nerves.gen.qemu
+```
+
+The generated command only forwards SSH. QEMU's user-mode network keeps the
+guest on a private subnet (it gets 10.0.2.15), so nothing on the host can reach
+it directly; the app has to be forwarded as well. Add a second `hostfwd` for
+port 80, where the endpoint listens on a device, to the `-netdev` line:
+
+```
+-netdev user,id=eth0,hostfwd=tcp:127.0.0.1:10022-:22,hostfwd=tcp:127.0.0.1:8080-:80
+```
+
+The whole thing, as printed on an Apple Silicon Mac with that change made:
+
+```bash
+qemu-system-aarch64 \
+  -machine virt,accel=hvf \
+  -cpu host \
+  -smp 1 \
+  -m 256M \
+  -kernel ~/.nerves/artifacts/nerves_system_qemu_aarch64-portable-0.4.2/images/little_loader.elf \
+  -netdev user,id=eth0,hostfwd=tcp:127.0.0.1:10022-:22,hostfwd=tcp:127.0.0.1:8080-:80 \
+  -device virtio-net-device,netdev=eth0,mac=fe:db:ed:de:d0:01 \
+  -global virtio-mmio.force-legacy=false \
+  -drive if=none,file=virtual-disk.img,format=raw,id=vdisk \
+  -device virtio-blk-device,drive=vdisk,bus=virtio-mmio-bus.0 \
+  -nographic
+```
+
+Then the desktop is at <http://localhost:8080> and the IEx console is on the
+terminal (`ssh -p 10022 localhost` works too). To reach it from another device
+on your network, bind the forward to every interface with
+`hostfwd=tcp::8080-:80` and use the Mac's address. The `check_origin` setting is
+off, so the LiveView socket connects through the forwarded port without fuss.
+
+Inside the guest there is no WiFi adapter, so the WiFi window says so, and the
+LAN is only reachable through QEMU's NAT, which is enough for the camera window.
+
 ## Making It Your Own
 
 To use this project as a start for your own Nerves/LiveView project, first
