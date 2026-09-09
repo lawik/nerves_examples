@@ -47,7 +47,11 @@ defmodule HelloLiveView.Application do
   def children(target) do
     [
       # Validate new firmware once an interface reports internet
-      HelloLiveView.FirmwareValidator
+      HelloLiveView.FirmwareValidator,
+      # Erlang distribution: starts the node as nerves@<hostname>.local and
+      # keeps connecting to the other devices found over mDNS. The cookie is
+      # the release's (mix.exs), so a laptop node can join with it too.
+      {NervesNode, cookie: :hello_live_view_cookie}
     ] ++ board_children(target) ++ kiosk_children()
   end
 

@@ -92,6 +92,8 @@ end
 # See https://github.com/nerves-networking/vintage_net for more information
 config :vintage_net,
   regulatory_domain: "US",
+  # The mdns_lite DNS bridge (below), ahead of the DHCP-provided servers
+  additional_name_servers: [{127, 0, 0, 53}],
   config: [
     {"usb0", %{type: VintageNetDirect}},
     {"eth0",
@@ -126,6 +128,15 @@ config :mdns_lite,
 
   hosts: [:hostname, "hello_live_view"],
   ttl: 120,
+
+  # DNS bridge: a DNS server on 127.0.0.53 that answers .local queries from
+  # mDNS, so Erlang's own resolver (which knows nothing about mDNS) can look
+  # up the other devices. Erlang distribution needs this to reach
+  # nerves@nerves-xxxx.local (NervesNode in the supervision tree). vintage_net
+  # puts the bridge first in resolv.conf below.
+  dns_bridge_enabled: true,
+  dns_bridge_ip: {127, 0, 0, 53},
+  dns_bridge_port: 53,
 
   # Advertise the following services over mDNS.
   services: [

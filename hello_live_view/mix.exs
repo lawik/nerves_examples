@@ -115,6 +115,11 @@ defmodule HelloLiveView.MixProject do
       # Dependencies for all targets except :host
       {:nerves_runtime, "~> 0.13.0", targets: @all_targets},
       {:nerves_pack, "~> 0.7.0", targets: @all_targets},
+      # Clusters the devices over Erlang distribution: starts epmd and the
+      # node as nerves@<hostname>.local, then finds the other devices through
+      # the _epmd._tcp service they all advertise over mDNS (config/target.exs)
+      # and connects to them. Experimental, pinned to a commit.
+      {:nerves_node, github: "lawik/nerves_node", ref: "e45e933", targets: @all_targets},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
