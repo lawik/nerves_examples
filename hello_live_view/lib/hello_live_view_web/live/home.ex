@@ -24,6 +24,10 @@ defmodule HelloLiveViewWeb.Home do
   Restart and Shut Down, from the Deskbar's leaf menu, ask first in a window
   of their own (`power-restart`, `power-shut-down`). Like an alert, that
   question is answered rather than restored.
+
+  A window for hardware only one board has is compiled in for that board
+  alone, the way `HelloLiveView.Kiosk` is: the Buzzer window exists on the
+  reComputer R22xx target and nowhere else (`config/config.exs`).
   """
   use HelloLiveViewWeb, :live_view
   import HelloLiveViewWeb.Format
@@ -43,6 +47,21 @@ defmodule HelloLiveViewWeb.Home do
   alias HelloLiveView.WiFi
   alias HelloLiveView.Windows
   alias HelloLiveViewWeb.ANSI
+
+  # Windows the board brings, fixed at compile time like the library behind
+  # them: the reComputer R22xx's buzzer.
+  @buzzer? Application.compile_env(:hello_live_view, :buzzer, false)
+  @board_apps if @buzzer?,
+                do: [
+                  %{
+                    id: "buzzer",
+                    title: "Buzzer",
+                    label: "Buzzer",
+                    icon: "audio-card",
+                    width: 440
+                  }
+                ],
+                else: []
 
   # The window registry: presentation only. Anything persisted lives in
   # HelloLiveView.Windows, keyed by these ids.
@@ -133,6 +152,9 @@ defmodule HelloLiveViewWeb.Home do
     }
   ]
 
+  # Plus whatever this board brings.
+  @apps @apps ++ @board_apps
+
   # Every application window shares this icon.
   @app_icon "application-x-executable"
   # Likewise every editor window, and every "no viewer" alert.
@@ -194,6 +216,7 @@ defmodule HelloLiveViewWeb.Home do
       |> assign(:wifi, nil)
       |> assign(:camera, nil)
       |> assign(:camera_notice, nil)
+      |> assign(:buzzer, nil)
       |> assign(:viewport, nil)
       |> assign(:mobius, nil)
       |> assign(:mobius_range, Metrics.default_range())
@@ -278,6 +301,19 @@ defmodule HelloLiveViewWeb.Home do
   end
 
   def handle_info({:camera, _status}, socket), do: {:noreply, socket}
+
+  if @buzzer? do
+    # A pattern or Morse line has finished sounding. One from a player already
+    # stopped or replaced is dropped.
+    def handle_info(
+          {:buzzer, :done, ref},
+          %{assigns: %{buzzer: %{playing: %{ref: ref}}}} = socket
+        ) do
+      {:noreply, buzzer_put(socket, playing: nil)}
+    end
+
+    def handle_info({:buzzer, :done, _ref}, socket), do: {:noreply, socket}
+  end
 
   # VintageNet reporting a change on the WiFi interface while its window is
   # open: a scan finished, or the association or an address changed.
@@ -475,6 +511,71 @@ defmodule HelloLiveViewWeb.Home do
   def handle_event("camera_stop", _params, socket) do
     :ok = Camera.stop()
     {:noreply, assign(socket, camera: Camera.status(), camera_notice: nil)}
+  end
+
+  # ------------------------------------------------------------ buzzer window
+  # Only on the reComputer R22xx target; elsewhere these events are unknown.
+
+  if @buzzer? do
+    alias HelloLiveView.Buzzer
+
+    def handle_event("buzzer_beep", %{"id" => id}, socket) do
+      with %{available?: true} <- socket.assigns.buzzer,
+           {:ok, beep} <- Buzzer.fetch_beep(id) do
+        Buzzer.beep(beep.ms)
+        {:noreply, socket |> buzzer_stop_playing() |> buzzer_put(held?: false, notice: nil)}
+      else
+        _unavailable -> {:noreply, socket}
+      end
+    end
+
+    def handle_event("buzzer_play", %{"id" => id}, socket) do
+      with %{available?: true} <- socket.assigns.buzzer,
+           {:ok, pattern} <- Buzzer.fetch_pattern(id) do
+        {:noreply, buzzer_play(socket, pattern.id, pattern.label, pattern.steps)}
+      else
+        _unavailable -> {:noreply, socket}
+      end
+    end
+
+    def handle_event("buzzer_morse", %{"text" => text}, socket) do
+      with %{available?: true} <- socket.assigns.buzzer,
+           {:ok, steps} <- Buzzer.morse(text) do
+        label = "Morse: " <> String.slice(String.trim(text), 0, Buzzer.max_morse())
+        {:noreply, buzzer_play(socket, "morse", label, steps)}
+      else
+        :error -> {:noreply, buzzer_put(socket, notice: "Nothing there that Morse can send.")}
+        _unavailable -> {:noreply, socket}
+      end
+    end
+
+    def handle_event("buzzer_hold", _params, socket) do
+      case socket.assigns.buzzer do
+        %{available?: true, held?: true} ->
+          Buzzer.off()
+          {:noreply, buzzer_put(socket, held?: false, notice: nil)}
+
+        %{available?: true} ->
+          socket = buzzer_stop_playing(socket)
+          Buzzer.on()
+          {:noreply, buzzer_put(socket, held?: true, notice: nil)}
+
+        _unavailable ->
+          {:noreply, socket}
+      end
+    end
+
+    def handle_event("buzzer_stop", _params, socket) do
+      case socket.assigns.buzzer do
+        %{available?: true} ->
+          socket = buzzer_stop_playing(socket)
+          Buzzer.off()
+          {:noreply, buzzer_put(socket, held?: false, notice: nil)}
+
+        _unavailable ->
+          {:noreply, socket}
+      end
+    end
   end
 
   # ------------------------------------------------------------- WiFi window
@@ -778,6 +879,24 @@ defmodule HelloLiveViewWeb.Home do
   defp load(socket, "i2c"),
     do: assign(socket, i2c: I2C.scan(), i2c_scanned_at: socket.assigns.now)
 
+  if @buzzer? do
+    alias HelloLiveView.Buzzer
+
+    # Whether there is a buzzer is read when the window opens. What is
+    # sounding is this view's own doing, so it is kept, not re-read.
+    defp load(%{assigns: %{buzzer: %{}}} = socket, "buzzer"), do: socket
+
+    defp load(socket, "buzzer") do
+      assign(socket, :buzzer, %{
+        available?: Buzzer.available?(),
+        playing: nil,
+        held?: false,
+        notice: nil,
+        max_morse: Buzzer.max_morse()
+      })
+    end
+  end
+
   # The camera process reports every change; the window only has to listen.
   defp load(socket, "camera") do
     if connected?(socket), do: Camera.subscribe()
@@ -845,6 +964,17 @@ defmodule HelloLiveViewWeb.Home do
     case socket.assigns.power do
       %{id: ^id} -> assign(socket, :power, nil)
       _ -> socket
+    end
+  end
+
+  if @buzzer? do
+    alias HelloLiveView.Buzzer
+
+    # Closing the window is the last word: nothing keeps sounding behind it.
+    defp forget(socket, "buzzer") do
+      socket = buzzer_stop_playing(socket)
+      if match?(%{available?: true, held?: true}, socket.assigns.buzzer), do: Buzzer.off()
+      assign(socket, :buzzer, nil)
     end
   end
 
@@ -1116,6 +1246,70 @@ defmodule HelloLiveViewWeb.Home do
       %{width: width} -> width
       nil -> 460
     end
+  end
+
+  # ----------------------------------------------------------------- buzzer
+  # The window and everything that plays it, on the reComputer R22xx target
+  # only. Elsewhere the window renders nothing, and cannot be opened from the
+  # desktop since it has no icon.
+
+  if @buzzer? do
+    alias HelloLiveView.Buzzer
+    # An import is resolved even in the branch that is not taken; an alias
+    # is not, so the panel is called through one.
+    alias HelloLiveViewWeb.Components.Buzzer, as: Panel
+
+    defp buzzer_window(assigns) do
+      ~H"""
+      <.window
+        :if={"buzzer" in @open}
+        id="buzzer"
+        title="Buzzer"
+        icon="audio-card"
+        width={440}
+        active={@focused == "buzzer"}
+        window={placement(@windows, "buzzer")}
+      >
+        <:menu>
+          <.menu_item phx-click="buzzer_stop">Stop</.menu_item>
+        </:menu>
+        <Panel.buzzer_panel buzzer={@buzzer} beeps={Buzzer.beeps()} patterns={Buzzer.patterns()} />
+      </.window>
+      """
+    end
+
+    # One player at a time: starting another stops the one still going, and
+    # releases a hold, so what the window says is sounding is what sounds.
+    defp buzzer_play(socket, id, label, steps) do
+      socket = buzzer_stop_playing(socket)
+      if match?(%{held?: true}, socket.assigns.buzzer), do: Buzzer.off()
+      {pid, ref} = Buzzer.play(steps)
+
+      buzzer_put(socket,
+        playing: %{id: id, label: label, pid: pid, ref: ref},
+        held?: false,
+        notice: nil
+      )
+    end
+
+    defp buzzer_stop_playing(socket) do
+      case socket.assigns.buzzer do
+        %{playing: %{pid: pid}} ->
+          Buzzer.stop(pid)
+          buzzer_put(socket, playing: nil)
+
+        _idle ->
+          socket
+      end
+    end
+
+    defp buzzer_put(%{assigns: %{buzzer: %{} = buzzer}} = socket, changes) do
+      assign(socket, :buzzer, Map.merge(buzzer, Map.new(changes)))
+    end
+
+    defp buzzer_put(socket, _changes), do: socket
+  else
+    defp buzzer_window(assigns), do: ~H""
   end
 
   # Windows we have no state for yet are simply not open.
@@ -1513,6 +1707,8 @@ defmodule HelloLiveViewWeb.Home do
         </:menu>
         <.camera_panel camera={@camera} notice={@camera_notice} />
       </.window>
+
+      <.buzzer_window open={@open} focused={@focused} windows={@windows} buzzer={@buzzer} />
 
       <.window
         :if={"wifi" in @open}

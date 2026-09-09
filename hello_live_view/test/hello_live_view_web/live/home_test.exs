@@ -242,6 +242,20 @@ defmodule HelloLiveViewWeb.HomeTest do
     assert assigns(view).wifi == nil
   end
 
+  # The Buzzer window is compiled in on the reComputer R22xx target only
+  # (config/config.exs); on the host there is no icon and nothing to render.
+  test "the Buzzer window is not on this board", %{conn: conn} do
+    {:ok, view, html} = live(conn, ~p"/")
+
+    refute html =~ ~s(phx-value-id="buzzer")
+    refute has_element?(view, "button.be-icon-tile[phx-value-id=buzzer]")
+
+    # Even asked for by id, there is no window behind it.
+    html = render_click(view, "open", %{"id" => "buzzer"})
+    refute html =~ ~s(id="buzzer")
+    assert assigns(view).buzzer == nil
+  end
+
   test "the Security Camera window watches a camera and shows its latest still", %{conn: conn} do
     on_exit(fn -> HelloLiveView.Camera.stop() end)
     {:ok, view, _html} = live(conn, ~p"/")

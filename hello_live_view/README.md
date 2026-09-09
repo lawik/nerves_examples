@@ -100,7 +100,8 @@ carrier. Its system is a fork of `nerves_system_rpi5` that adds the board's
 device tree overlay and drivers, and the
 [recomputer_r22](https://github.com/lawik/recomputer_r22) library drives the
 buzzer, RGB LED and SuperCAP UPS. `HelloLiveView.Application` starts the
-library's supervisor on this target only. Both deps resolve from GitHub and the
+library's supervisor on this target only, and the desktop's Buzzer window
+(beeps, patterns, Morse) is compiled in for it alone. Both deps resolve from GitHub and the
 system is a prebuilt download, so no Buildroot build is needed. The target runs
 OTP 29, so build with an OTP 29 host toolchain. The fork shares its name with
 the Hex `nerves_system_rpi5` used by the `rpi5` target, so `mix.exs` picks one

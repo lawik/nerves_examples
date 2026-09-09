@@ -59,6 +59,11 @@ config :hello_live_view, target: Mix.target()
 # device's own screen. Everything else is the same on every target.
 config :hello_live_view, kiosk: false
 
+# The Seeed reComputer R22xx has a buzzer, and the library that drives it only
+# ships on that target (mix.exs). The Buzzer window compiles in there and
+# nowhere else: HelloLiveView.Buzzer, its component and the desktop's icon.
+config :hello_live_view, buzzer: Mix.target() == :recomputer_r22
+
 # Customize non-Elixir parts of the firmware. See
 # https://hexdocs.pm/nerves/advanced-configuration.html for details.
 
